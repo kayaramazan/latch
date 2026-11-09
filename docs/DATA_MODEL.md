@@ -121,8 +121,12 @@ A snapshot is the entire configuration:
 `config_versions(version INTEGER PK, created_at, author, summary, snapshot JSON)`.
 Every mutation writes version N+1 with the full snapshot (small data, simple
 diffing). `Rollback(n)` validates snapshot `n` and writes it as a new version
-with summary `rollback to n`. At most `settings.events.retention`-independent
-200 versions are kept (oldest pruned, configurable).
+with summary `rollback to n`. At most 200 versions are kept by default (oldest pruned; `store.Options.MaxVersions`).
+
+Defaults are applied by `Normalize()`; boolean fields cannot be defaulted that
+way, so new objects are built with `NewRoute`, `NewRelay`, `NewIPPolicy`,
+`NewRateLimitRule` and `DefaultSettings`, and partial updates must merge onto
+the existing object.
 
 Validation runs on the **whole snapshot**, so cross-object rules (dangling
 `ipPolicyId`, hostname collisions, relay existence) are caught before writing.

@@ -4,6 +4,24 @@ Decisions, assumptions and backlog. Newest first within each section.
 
 ## Decisions
 
+- 2026-11-09 — Store keeps the **full snapshot JSON per version** (not deltas) and
+  prunes to 200 versions by default (`store.Options.MaxVersions`). Config is small;
+  simplicity and trivial rollback win.
+- 2026-11-09 — Store opens SQLite with `SetMaxOpenConns(1)` + WAL + busy_timeout.
+  Single-process, write-serialized by a mutex; no need for a connection pool and it
+  rules out SQLITE_BUSY under `-race` tests. Revisit if the event store (phase 7)
+  needs concurrent readers — it can use its own pool.
+- 2026-11-09 — `Normalize()` cannot default boolean fields (`Route.Enabled`,
+  `Settings.LocalMode.HTTP3`, `HTTPSRedirect`): a zero bool is indistinguishable
+  from "false set". Rule: new objects are created through `NewRoute/NewRelay/
+  DefaultSettings`, and the API layer (phase 8) must merge PATCH bodies onto the
+  existing object rather than onto zero values.
+- 2026-11-09 — Route bookkeeping (`UpdatedAt`, `Version`) is stamped by the store
+  only when the route's content changed, so re-saving the snapshot does not churn
+  versions; `ComputeDiff` ignores those fields.
+- 2026-11-09 — Hostname rule: lowercase FQDN with ≥2 labels, no wildcards, no IP
+  literals. Wildcards belong to relay token scopes, not routes.
+
 - 2026-11-09 — Go module path `github.com/kayaramazan/latch`, single `go.mod` at the
   repo root (shared `proto/` and `policy/` packages import naturally; no workspace).
   License Apache-2.0. User decision.

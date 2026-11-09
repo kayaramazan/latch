@@ -109,16 +109,16 @@ Fazlar arasında kritik kilometre taşları:
 config deposunu kurmak.
 
 **Teslimatlar**
-- [ ] `proto/model`: Route, IPPolicy, RateLimitRule, HeaderRule, HealthCheck,
+- [x] `proto/model`: Route, IPPolicy, RateLimitRule, HeaderRule, HealthCheck,
       Relay, ConfigSnapshot tipleri; JSON etiketleri; `Validate()` — alan
       düzeyinde hata tipi (`FieldError{Path, Msg}`); hostname/port/CIDR
       doğrulayıcıları; ID üretimi.
-- [ ] `latchd/internal/store`: SQLite (`modernc.org/sqlite`), gömülü
+- [x] `latchd/internal/store`: SQLite (`modernc.org/sqlite`), gömülü
       migration'lar, her mutasyonda yeni `config_version` satırı (tam
       snapshot JSON + değişiklik özeti), `Rollback(version)`,
       `Diff(a, b) → etkilenen route listesi`, `Export()/Import()` (yedek/geri
       yükleme), eşzamanlı yazma kilidi.
-- [ ] `latchd/internal/config`: veri dizini, dosya izinleri (0600), ayarlar
+- [x] `latchd/internal/config`: veri dizini, dosya izinleri (0600), ayarlar
       (dinleme adresi, log seviyesi) — minimal.
 
 **Testler:** model doğrulama tablosu testleri; store: oluştur/güncelle/sil →
@@ -126,8 +126,8 @@ versiyon artar; rollback eski durumu geri getirir; diff doğru route'ları
 listeler; export→import birebir; migration ileri-geri.
 
 **DoD**
-- [ ] `go test ./proto/... ./latchd/...` yeşil, store için ≥%80 kapsama.
-- [ ] `docs/DATA_MODEL.md` koda uygun (sapma varsa doküman güncellenir).
+- [x] `go test ./proto/... ./latchd/...` yeşil, store için ≥%80 kapsama.
+- [x] `docs/DATA_MODEL.md` koda uygun (sapma varsa doküman güncellenir).
 
 **Karar noktaları:** snapshot başına tam JSON mu (öneri; basit, küçük veri)
 yoksa delta mı; saklanacak maksimum versiyon sayısı (öneri: 200, ayarlanabilir).
