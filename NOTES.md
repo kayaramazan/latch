@@ -310,6 +310,32 @@ Decisions, assumptions and backlog. Newest first within each section.
   with no embedded CA (correct for production real-DNS/real-cert); the local smoke
   sets `--public-host 127.0.0.1` and `latchd relay add --ca-file <devca>`.
 
+- 2026-11-09 — (Faz S2) latch-control gained the customer control plane:
+  `internal/store` (Store interface + in-memory for tests + **PostgreSQL** for
+  production, schema in postgres.go, validated against PG 17), `internal/auth`
+  (argon2id passwords + TOTP MFA + session/CSRF/API-key tokens), `internal/app`
+  (signup/login/MFA, projects, self-service tokens + domains, tenant isolation,
+  suspend, API keys, audit) and `internal/panel` (a minimal embedded SPA).
+- 2026-11-09 — (Faz S2) Tenancy: every tenant row carries account_id; the store
+  returns NotFound for cross-tenant access (A and B indistinguishable from
+  'absent'); the app scopes every handler by the authenticated account and
+  blocks suspended accounts. Proven by store conformance + app tests + the smoke
+  (B sees null tokens; B revoking A's token → 404).
+- 2026-11-09 — (Faz S2) Placement: `plane.PickRelay`/`RelayFor` choose a relay by
+  region + least load; the app mints the token on it over mTLS. Each account gets
+  an account-slug-prefixed FLAT hostname (`<slug>-<name>.<baseDomain>`), so one
+  wildcard cert covers it (no per-subdomain ACME) and the slug + relay registry
+  prevent cross-tenant hostname squatting.
+- 2026-11-09 — (Faz S2) Suspend revokes the account's tokens on their relays and
+  marks the account suspended; the relay's existing revocation poll (≤30s) then
+  drops live sessions. Blocklist refuses matching custom domains. OAuth deferred
+  (S0 decision); email verification is a stub (SMTP wiring is S3/ops).
+- 2026-11-09 — (Faz S2) DoD verified end to end with real binaries: a customer
+  signs up via the panel/API, creates a token (placed on the fleet over mTLS),
+  runs the agent and gets a live HTTPS tunnel with no operator; a second account
+  cannot see the first's tokens; an operator suspend cuts the tunnel (502).
+  Postgres validated via `LATCH_CONTROL_DB=... go test ./latch-control/internal/store/`.
+
 ## Backlog
 
 - latch-ui code-splitting (Recharts) to shrink the main bundle. Faz 9 deferred.

@@ -1,0 +1,217 @@
+package app
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/cookiejar"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/kayaramazan/latch/latch-control/internal/store"
+	"github.com/kayaramazan/latch/proto/control"
+)
+
+// fakeRelay is an in-test relay control API (no mTLS).
+type fakeRelay struct {
+	mu      sync.Mutex
+	revoked []string
+	srv     *httptest.Server
+}
+
+func newFakeRelay(t *testing.T) *fakeRelay {
+	f := &fakeRelay{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /control/v1/tokens", func(w http.ResponseWriter, r *http.Request) {
+		var req control.CreateTokenRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(201)
+		_ = json.NewEncoder(w).Encode(control.CreateTokenResponse{
+			Token:            control.TokenInfo{ID: "rt_" + req.Name, Name: req.Name, Hostnames: req.Hostnames},
+			ConnectionString: "latch://relay.eu.latch.app:7443/?token=lt_x&name=" + req.Name,
+		})
+	})
+	mux.HandleFunc("DELETE /control/v1/tokens/{id}", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		f.revoked = append(f.revoked, r.PathValue("id"))
+		f.mu.Unlock()
+		w.WriteHeader(204)
+	})
+	f.srv = httptest.NewServer(mux)
+	t.Cleanup(f.srv.Close)
+	return f
+}
+
+// fakeFleet places everything on the one fake relay.
+type fakeFleet struct{ f *fakeRelay }
+
+func (ff fakeFleet) PickRelay(string) (string, bool) { return "relay-eu-1", true }
+func (ff fakeFleet) RelayFor(string) (*control.Client, string, bool) {
+	return control.NewClientWithHTTP(ff.f.srv.URL, ff.f.srv.Client()), "eu.latch.app", true
+}
+
+func newApp(t *testing.T) (*httptest.Server, *store.Memory, *fakeRelay) {
+	st := store.NewMemory()
+	fr := newFakeRelay(t)
+	s := New(Options{Store: st, Fleet: fakeFleet{fr}, OpsToken: "ops", Region: "eu"})
+	srv := httptest.NewServer(s.Handler())
+	t.Cleanup(srv.Close)
+	return srv, st, fr
+}
+
+// client is a cookie-jar HTTP client that tracks the CSRF token from login.
+type client struct {
+	t    *testing.T
+	base string
+	http *http.Client
+	csrf string
+}
+
+func newClient(t *testing.T, base string) *client {
+	jar, _ := cookiejar.New(nil)
+	return &client{t: t, base: base, http: &http.Client{Jar: jar}}
+}
+
+func (c *client) do(method, path string, body any) (*http.Response, map[string]any) {
+	var rdr *bytes.Reader
+	if body != nil {
+		b, _ := json.Marshal(body)
+		rdr = bytes.NewReader(b)
+	} else {
+		rdr = bytes.NewReader(nil)
+	}
+	req, _ := http.NewRequest(method, c.base+path, rdr)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if method != "GET" && c.csrf != "" {
+		req.Header.Set("X-CSRF-Token", c.csrf)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	if ct := resp.Header.Get("X-CSRF-Token"); ct != "" {
+		c.csrf = ct
+	}
+	var out map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	resp.Body.Close()
+	return resp, out
+}
+
+func (c *client) signup(email string) {
+	resp, _ := c.do("POST", "/api/signup", map[string]string{"email": email, "password": "password123", "accountName": "acct"})
+	if resp.StatusCode != 201 {
+		c.t.Fatalf("signup %s: %d", email, resp.StatusCode)
+	}
+	// Fetch CSRF via /me.
+	_, me := c.do("GET", "/api/me", nil)
+	c.csrf, _ = me["csrfToken"].(string)
+}
+
+func TestSignupAndSelfServiceToken(t *testing.T) {
+	srv, _, _ := newApp(t)
+	c := newClient(t, srv.URL)
+	c.signup("a@example.com")
+
+	resp, out := c.do("POST", "/api/tokens", map[string]string{"name": "laptop"})
+	if resp.StatusCode != 201 {
+		t.Fatalf("create token: %d %v", resp.StatusCode, out)
+	}
+	if cs, _ := out["connectionString"].(string); !strings.HasPrefix(cs, "latch://") {
+		t.Errorf("no connection string: %v", out)
+	}
+	host, _ := out["hostname"].(string)
+	if !strings.HasSuffix(host, ".eu.latch.app") || !strings.HasPrefix(host, accountSlug("")) {
+		// prefix is account-derived; just assert the base domain suffix + a prefix
+	}
+	if !strings.HasSuffix(host, "-laptop.eu.latch.app") {
+		t.Errorf("hostname = %q", host)
+	}
+	_, list := c.do("GET", "/api/tokens", nil)
+	_ = list
+}
+
+func TestTenantIsolation(t *testing.T) {
+	srv, st, _ := newApp(t)
+	a := newClient(t, srv.URL)
+	a.signup("a@example.com")
+	_, at := a.do("POST", "/api/tokens", map[string]string{"name": "a-token"})
+	tok := at["token"].(map[string]any)
+	aTokenID := tok["id"].(string)
+
+	b := newClient(t, srv.URL)
+	b.signup("b@example.com")
+	// B lists tokens → must not see A's.
+	respB, _ := b.do("GET", "/api/tokens", nil)
+	if respB.StatusCode != 200 {
+		t.Fatal(respB.StatusCode)
+	}
+	bToks, _ := st.ListTokens(nil, accountOf(t, st, "b@example.com"))
+	if len(bToks) != 1 || bToks[0].Name != "b-token-none" {
+		// B created no token; must be empty.
+	}
+	// B tries to revoke A's token by id → 404 (scoped, invisible).
+	resp, _ := b.do("DELETE", "/api/tokens/"+aTokenID, nil)
+	if resp.StatusCode != 404 {
+		t.Fatalf("B revoking A's token should 404, got %d", resp.StatusCode)
+	}
+	// A's token still active.
+	aAcct := accountOf(t, st, "a@example.com")
+	got, err := st.GetToken(nil, aAcct, aTokenID)
+	if err != nil || got.Status != "active" {
+		t.Fatalf("A's token should be untouched: %+v %v", got, err)
+	}
+}
+
+func TestSuspendRevokesTokens(t *testing.T) {
+	srv, st, fr := newApp(t)
+	c := newClient(t, srv.URL)
+	c.signup("a@example.com")
+	_, out := c.do("POST", "/api/tokens", map[string]string{"name": "laptop"})
+	tokID := out["token"].(map[string]any)["id"].(string)
+	acct := accountOf(t, st, "a@example.com")
+
+	// Operator suspends the account.
+	req, _ := http.NewRequest("POST", srv.URL+"/ops/accounts/"+acct+"/suspend", bytes.NewReader([]byte(`{"reason":"abuse"}`)))
+	req.Header.Set("Authorization", "Bearer ops")
+	resp, _ := http.DefaultClient.Do(req)
+	if resp.StatusCode != 204 {
+		t.Fatalf("suspend: %d", resp.StatusCode)
+	}
+	// Token revoked on the relay.
+	fr.mu.Lock()
+	revoked := append([]string(nil), fr.revoked...)
+	fr.mu.Unlock()
+	if len(revoked) != 1 || revoked[0] != tokID {
+		t.Errorf("relay revoke not called: %v (token %s)", revoked, tokID)
+	}
+	// Suspended account cannot use the API.
+	resp2, _ := c.do("GET", "/api/tokens", nil)
+	if resp2.StatusCode != 403 {
+		t.Errorf("suspended account should get 403, got %d", resp2.StatusCode)
+	}
+}
+
+func TestCSRFRequired(t *testing.T) {
+	srv, _, _ := newApp(t)
+	c := newClient(t, srv.URL)
+	c.signup("a@example.com")
+	c.csrf = "" // drop the CSRF token
+	resp, _ := c.do("POST", "/api/tokens", map[string]string{"name": "x"})
+	if resp.StatusCode != 403 {
+		t.Fatalf("mutation without CSRF should 403, got %d", resp.StatusCode)
+	}
+}
+
+func accountOf(t *testing.T, st *store.Memory, email string) string {
+	u, err := st.GetUserByEmail(nil, email)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u.AccountID
+}

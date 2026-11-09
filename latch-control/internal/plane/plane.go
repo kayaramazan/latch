@@ -162,3 +162,33 @@ func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
 }
+
+// PickRelay chooses a relay in region with the fewest tokens (simple placement).
+// region "" matches any. It returns the relay id and whether one was found.
+func (p *Plane) PickRelay(region string) (string, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	best := ""
+	bestLoad := int(^uint(0) >> 1)
+	for id, r := range p.fleet {
+		if region != "" && r.Region != region {
+			continue
+		}
+		if r.Health.Tokens < bestLoad {
+			bestLoad = r.Health.Tokens
+			best = id
+		}
+	}
+	return best, best != ""
+}
+
+// RelayFor returns a control client + the relay's base domain for relayID.
+func (p *Plane) RelayFor(relayID string) (*control.Client, string, bool) {
+	p.mu.Lock()
+	rec := p.fleet[relayID]
+	p.mu.Unlock()
+	if rec == nil {
+		return nil, "", false
+	}
+	return p.client(rec.ControlURL), rec.Health.BaseDomain, true
+}

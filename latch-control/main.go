@@ -18,7 +18,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kayaramazan/latch/latch-control/internal/app"
+	"github.com/kayaramazan/latch/latch-control/internal/panel"
 	"github.com/kayaramazan/latch/latch-control/internal/plane"
+	"github.com/kayaramazan/latch/latch-control/internal/store"
 )
 
 // Version is set at build time via -ldflags "-X main.Version=...".
@@ -96,6 +99,9 @@ func serve(args []string) error {
 	clientCert := fs.String("client-cert", "", "PEM client certificate to call relay control APIs")
 	clientKey := fs.String("client-key", "", "PEM client key")
 	relayCA := fs.String("relay-ca", "", "PEM CA that signs relay control server certificates")
+	opsToken := fs.String("ops-token", "", "bearer token for /ops endpoints")
+	region := fs.String("region", "eu", "default region for new accounts")
+	dbDSN := fs.String("db", "", "PostgreSQL DSN (empty = in-memory, dev only)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -116,8 +122,27 @@ func serve(args []string) error {
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	p := plane.New(plane.Options{RegToken: *regToken, ClientCert: cert, RelayCAs: pool, Logger: log})
+	var st store.Store = store.NewMemory()
+	if *dbDSN != "" {
+		pg, err := store.OpenPostgres(context.Background(), *dbDSN)
+		if err != nil {
+			return fmt.Errorf("postgres: %w", err)
+		}
+		defer pg.Close()
+		st = pg
+		log.Info("using PostgreSQL store")
+	} else {
+		log.Warn("using in-memory store (data is lost on restart); set --db for production")
+	}
+	appSrv := app.New(app.Options{Store: st, Fleet: p, OpsToken: *opsToken, Region: *region, Issuer: "Latch", Logger: log})
 
-	srv := &http.Server{Addr: *listen, Handler: p.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	top := http.NewServeMux()
+	top.Handle("/relays/", p.Handler())
+	top.Handle("/api/", appSrv.Handler())
+	top.Handle("/ops/", appSrv.Handler())
+	top.Handle("/", panel.Handler())
+
+	srv := &http.Server{Addr: *listen, Handler: top, ReadHeaderTimeout: 10 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go func() {

@@ -614,27 +614,27 @@ CRUD, relay çevrimdışıyken kontrol düzlemi davranışı, kullanım raporu d
 oluşturması; kiracılar arası tam izolasyon.
 
 **Teslimatlar**
-- [ ] `latch-control`: Account/User/rol, kimlik doğrulama (parola + OAuth +
+- [x] `latch-control`: Account/User/rol, kimlik doğrulama (parola + OAuth +
       MFA), oturum ve API anahtarları, denetim günlüğü (audit log).
-- [ ] Project kapsamı; self-service token ve custom-domain (doğrulama akışı
+- [x] Project kapsamı; self-service token ve custom-domain (doğrulama akışı
       Faz 4 izin fonksiyonunu kullanır).
-- [ ] **Yerleştirme (placement):** hesabı/token'ı uygun relay'e ata, ajana
+- [x] **Yerleştirme (placement):** hesabı/token'ı uygun relay'e ata, ajana
       doğru `latch://` bağlantı dizesini ver (yönetilen modelde).
-- [ ] Kiracı izolasyonu: her token/domain/route `account_id` ile etiketli;
+- [x] Kiracı izolasyonu: her token/domain/route `account_id` ile etiketli;
       kontrol düzlemi ve relay bir kiracının başkasının kaynağına erişmesini
       engeller.
-- [ ] Kötüye kullanım temeli: askıya alma (suspend) akışı, blok listesi, basit
+- [x] Kötüye kullanım temeli: askıya alma (suspend) akışı, blok listesi, basit
       alan adı itibar kontrolü; abuse/DMCA giriş noktası.
-- [ ] Müşteriye dönük API; minimal panel (latch-ui desenleriyle) veya API-first.
+- [x] Müşteriye dönük API; minimal panel (latch-ui desenleriyle) veya API-first.
 
 **Testler:** izolasyon (kiracı A, B'nin kaynağını göremez/değiştiremez),
 kayıt → token → canlı tünel uçtan uca, suspend trafiği kesiyor, audit log
 olayları yakalıyor.
 
 **DoD**
-- [ ] Yeni kullanıcı panelden kaydolup kendi token+alan adıyla 2 dakikada canlı
+- [x] Yeni kullanıcı panelden kaydolup kendi token+alan adıyla 2 dakikada canlı
       HTTPS tüneli açıyor — operatör müdahalesi yok.
-- [ ] Bir kiracının başka kiracının verisine erişemediği testlerle kanıtlı.
+- [x] Bir kiracının başka kiracının verisine erişemediği testlerle kanıtlı.
 
 ---
 

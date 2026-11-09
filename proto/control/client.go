@@ -111,6 +111,17 @@ func (c *Client) ListDomains(ctx context.Context) ([]DomainInfo, error) {
 	return out, c.do(ctx, http.MethodGet, "/domains", nil, &out)
 }
 
+// VerifyDomain asks the relay to check a custom domain's DNS.
+func (c *Client) VerifyDomain(ctx context.Context, domain string) (*VerifyDomainResponse, error) {
+	var out VerifyDomainResponse
+	return &out, c.do(ctx, http.MethodPost, "/domains/"+domain+"/verify", nil, &out)
+}
+
+// DeleteDomain removes a custom domain.
+func (c *Client) DeleteDomain(ctx context.Context, domain string) error {
+	return c.do(ctx, http.MethodDelete, "/domains/"+domain, nil, nil)
+}
+
 // Health reads the relay's health + usage.
 func (c *Client) Health(ctx context.Context) (*Health, error) {
 	var out Health

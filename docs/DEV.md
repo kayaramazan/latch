@@ -514,3 +514,59 @@ client cert → rejected) and the token/domain lifecycle through the shared
 `proto/control` client. `go test ./latch-control/internal/plane/` covers
 heartbeat auth + fleet inventory. The full chain (control-plane token → agent
 tunnel → usage in the control plane) was verified by hand.
+
+## SaaS S2 — accounts, multi-tenancy, self-service
+
+`latch-control` is now a multi-tenant control plane: customers sign up and
+manage their own tokens and domains; the control plane places them on the relay
+fleet. Self-hosted relays are unaffected.
+
+### Run it (dev, in-memory)
+
+```sh
+latch-control gen-certs --dir ./certs --relay-hosts 127.0.0.1,localhost
+latch-control serve --listen 127.0.0.1:9000 --reg-token SECRET --ops-token OPS \
+  --client-cert certs/control-plane.crt --client-key certs/control-plane.key --relay-ca certs/ca.crt
+# open http://127.0.0.1:9000 for the panel
+```
+
+For production add `--db 'postgres://user:pass@host/latchcontrol?sslmode=require'`
+(the schema migrates on start).
+
+### The customer flow
+
+```sh
+# sign up (panel or API) → session cookie + CSRF token
+curl -c jar -D - -X POST localhost:9000/api/signup -d '{"email":"a@b.com","password":"password123"}'
+# create a token → placed on a relay over mTLS, returns a connection string + hostname
+curl -b jar -H "X-CSRF-Token: <csrf>" -X POST localhost:9000/api/tokens -d '{"name":"laptop"}'
+# → {"connectionString":"latch://…","hostname":"<slug>-laptop.eu.latch.app"}
+# the customer runs the agent with it (no operator involved):
+latchd relay add --url "<connectionString>"
+latchd route add --target 127.0.0.1:3000 --tunnel laptop --hostname <slug>-laptop.eu.latch.app
+```
+
+Each account gets an account-prefixed hostname under the regional base domain, so
+one wildcard certificate covers it and tenants cannot claim each other's names.
+`POST /api/mfa/setup` + `/api/mfa/enable` turn on TOTP; `POST /api/apikeys` issues
+programmatic keys (used via `Authorization: Bearer lk_…`).
+
+### Operator / abuse
+
+```sh
+curl -H "Authorization: Bearer OPS" -X POST localhost:9000/ops/accounts/<id>/suspend -d '{"reason":"abuse"}'
+curl -H "Authorization: Bearer OPS" -X POST localhost:9000/ops/blocklist -d '{"pattern":"phish.example","reason":"phishing"}'
+```
+
+Suspend revokes the account's tokens on their relays (the relay drops live
+sessions within its revocation window) and blocks the account from the API.
+
+### What the S2 tests cover
+
+`go test ./latch-control/internal/store/` runs a conformance suite against the
+in-memory store (and, with `LATCH_CONTROL_DB` set, PostgreSQL): account/user
+creation, email-conflict, **tenant isolation** (B cannot see or mutate A's
+token), suspend, blocklist, audit and API keys. `go test ./latch-control/internal/app/`
+covers signup + self-service token, isolation (404 across tenants), suspend
+revoking tokens, and CSRF enforcement. The full self-service → live-tunnel →
+isolation → suspend chain was verified by hand with the real binaries.
