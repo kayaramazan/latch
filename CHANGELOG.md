@@ -3,7 +3,11 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.1.0] - 2026-11-10
+
+The managed-SaaS experience: a customer dashboard and marketing/landing site for
+the control plane, an anonymous free trial, and a real download/install story
+wired to GitHub Releases. Plus a relay installer fix.
 
 ### Added
 
