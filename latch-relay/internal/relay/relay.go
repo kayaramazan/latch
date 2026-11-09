@@ -19,6 +19,8 @@ import (
 
 	"github.com/kayaramazan/latch/latch-relay/internal/auth"
 	"github.com/kayaramazan/latch/latch-relay/internal/ingress"
+	"github.com/kayaramazan/latch/latch-relay/internal/metrics"
+	"github.com/kayaramazan/latch/latch-relay/internal/policies"
 	"github.com/kayaramazan/latch/latch-relay/internal/registry"
 	"github.com/kayaramazan/latch/latch-relay/internal/session"
 	"github.com/kayaramazan/latch/latch-relay/internal/store"
@@ -47,6 +49,13 @@ type Config struct {
 
 	TCPBindHost  string
 	TCPPortRange [2]int // default 20000-20999
+
+	// GeoIPPath is an optional MaxMind mmdb for country rules.
+	GeoIPPath string
+	// TrustedProxies are CIDRs whose X-Forwarded-For is trusted for client IP.
+	TrustedProxies []string
+	// MetricsAddr is the Prometheus /metrics listen address ("" disables).
+	MetricsAddr string
 
 	Certs CertProvider
 	// ACMEALPNChallenge adds the "acme-tls/1" ALPN to the HTTPS listener so the
@@ -101,14 +110,16 @@ type Relay struct {
 	log      *slog.Logger
 	store    *store.Store
 	auth     *auth.Manager
+	policies *policies.Manager
+	metrics  *metrics.Metrics
 	registry *registry.Registry
 	sessions *session.Manager
 	ingress  *ingress.Ingress
 
-	httpsLn, httpLn, agentLn net.Listener
-	httpsSrv, httpSrv        *http.Server
-	cancel                   context.CancelFunc
-	wg                       sync.WaitGroup
+	httpsLn, httpLn, agentLn, metricsLn net.Listener
+	httpsSrv, httpSrv, metricsSrv       *http.Server
+	cancel                              context.CancelFunc
+	wg                                  sync.WaitGroup
 }
 
 // New opens the store and builds all components without listening.
@@ -136,17 +147,50 @@ func New(cfg Config) (*Relay, error) {
 		}
 	}
 	r := &Relay{cfg: cfg, log: cfg.Logger, store: st, auth: auth.New(st)}
+	pm, err := policies.New(policies.Options{Store: st, TrustedProxies: cfg.TrustedProxies, GeoIPPath: cfg.GeoIPPath, Logger: cfg.Logger})
+	if err != nil {
+		_ = st.Close()
+		return nil, err
+	}
+	r.policies = pm
+	r.metrics = metrics.New()
 	_, httpsPortStr, _ := net.SplitHostPort(cfg.HTTPSAddr)
 	httpsPort, _ := strconv.Atoi(httpsPortStr)
 	if httpsPort == 0 {
 		httpsPort = 443
 	}
-	r.ingress = ingress.New(ingress.Options{Logger: cfg.Logger, OnEvent: cfg.OnEvent, TCPBindHost: cfg.TCPBindHost, HTTPSPort: httpsPort})
+	onEvent := func(ev model.AccessEvent) {
+		r.metrics.Record(ev)
+		if cfg.OnEvent != nil {
+			cfg.OnEvent(ev)
+		}
+	}
+	r.ingress = ingress.New(ingress.Options{Logger: cfg.Logger, OnEvent: onEvent, TCPBindHost: cfg.TCPBindHost,
+		HTTPSPort: httpsPort, Policy: pm, TrustedProxies: cfg.TrustedProxies,
+		OnAgentEvent: func(peer registry.Peer, ev model.AccessEvent) {
+			if s, ok := peer.(*session.Session); ok {
+				s.SendEvent(ev)
+			}
+		}})
 	r.registry = registry.New(st, registry.Options{PublicHost: cfg.PublicHost, HTTPSPort: httpsPort,
 		TCPPortRange: cfg.TCPPortRange, OnTCPChange: r.ingress.OnTCPChange})
 	r.ingress.SetRegistry(r.registry)
+	caps := []string{tunnel.CapTCP, tunnel.CapEvents}
+	if cfg.GeoIPPath != "" {
+		caps = append(caps, tunnel.CapGeoIP)
+	}
 	r.sessions = session.NewManager(session.Deps{Auth: r.auth, Registry: r.registry, RelayVersion: cfg.Version,
-		BaseDomain: cfg.BaseDomain, TCPPortRange: cfg.TCPPortRange, Logger: cfg.Logger})
+		BaseDomain: cfg.BaseDomain, TCPPortRange: cfg.TCPPortRange, Capabilities: caps, Logger: cfg.Logger,
+		OnPolicySync: func(s *session.Session, ps *tunnel.PolicySync) (tunnel.PolicyAck, error) {
+			version, geoMissing, err := r.policies.Sync(context.Background(), s.TokenID(), ps)
+			if err != nil {
+				return tunnel.PolicyAck{}, err
+			}
+			if geoMissing {
+				r.log.Warn("policy uses country rules but no GeoIP database is configured", "token", s.TokenID())
+			}
+			return tunnel.PolicyAck{Version: version}, nil
+		}})
 	return r, nil
 }
 
@@ -192,6 +236,9 @@ func (r *Relay) Start(ctx context.Context) error {
 	ctx, r.cancel = context.WithCancel(ctx)
 	if err := r.registry.Load(ctx); err != nil {
 		return fmt.Errorf("relay: load routes: %w", err)
+	}
+	if err := r.policies.Load(ctx); err != nil {
+		return fmt.Errorf("relay: load policies: %w", err)
 	}
 
 	httpsNextProtos := []string{"h2", "http/1.1"}
@@ -243,6 +290,21 @@ func (r *Relay) Start(ctx context.Context) error {
 	r.serve(func() { r.acceptAgents(ctx, tls.NewListener(ingress.LimitListener(aln, 0, 0), agentTLS)) })
 	r.serve(func() { r.watchRevocations(ctx) })
 
+	if r.cfg.MetricsAddr != "" {
+		mln, err := net.Listen("tcp", r.cfg.MetricsAddr)
+		if err != nil {
+			r.closeListeners()
+			return fmt.Errorf("relay: listen metrics %s: %w", r.cfg.MetricsAddr, err)
+		}
+		r.metricsLn = mln
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", r.metrics.Handler())
+		r.metricsSrv = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+		r.serve(func() { _ = r.metricsSrv.Serve(mln) })
+		r.log.Info("metrics listening", "addr", mln.Addr())
+	}
+	r.serve(func() { r.updateGauges(ctx) })
+
 	r.log.Info("relay listening", "https", r.httpsLn.Addr(), "agent", r.agentLn.Addr(), "publicHost", r.cfg.PublicHost, "version", r.cfg.Version)
 	return nil
 }
@@ -256,7 +318,7 @@ func (r *Relay) serve(fn func()) {
 }
 
 func (r *Relay) closeListeners() {
-	for _, l := range []net.Listener{r.httpsLn, r.httpLn, r.agentLn} {
+	for _, l := range []net.Listener{r.httpsLn, r.httpLn, r.agentLn, r.metricsLn} {
 		if l != nil {
 			_ = l.Close()
 		}
@@ -295,6 +357,20 @@ func (r *Relay) acceptAgents(ctx context.Context, ln net.Listener) {
 
 // watchRevocations closes sessions whose token was revoked or expired via
 // the CLI (a separate process) since they connected.
+// updateGauges refreshes live Prometheus gauges.
+func (r *Relay) updateGauges(ctx context.Context) {
+	t := time.NewTicker(5 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			r.metrics.SetAgents(len(r.sessions.Sessions()))
+		}
+	}
+}
+
 func (r *Relay) watchRevocations(ctx context.Context) {
 	t := time.NewTicker(r.cfg.RevocationCheck)
 	defer t.Stop()
@@ -316,6 +392,7 @@ func (r *Relay) watchRevocations(ctx context.Context) {
 				if !tok.Active(time.Now()) {
 					r.log.Info("token no longer active, closing its sessions", "token", tok.Name)
 					r.registry.DropToken(tok.ID)
+					r.policies.Drop(ctx, tok.ID)
 					r.sessions.CloseToken(tok.ID, tunnel.ByeTokenRevoked)
 				}
 			}
@@ -340,12 +417,13 @@ func (r *Relay) Stop(ctx context.Context) error {
 	}
 	r.sessions.Shutdown()
 	r.ingress.Close()
-	for _, srv := range []*http.Server{r.httpsSrv, r.httpSrv} {
+	for _, srv := range []*http.Server{r.httpsSrv, r.httpSrv, r.metricsSrv} {
 		if srv != nil {
 			_ = srv.Shutdown(ctx)
 		}
 	}
 	r.closeListeners()
 	r.wg.Wait()
+	_ = r.policies.Close()
 	return r.store.Close()
 }

@@ -150,6 +150,33 @@ Decisions, assumptions and backlog. Newest first within each section.
   **Karar (2026-11-09): yönetilen relay modeli** seçildi (operatör filoyu
   barındırır). Uygulama sırası: önce self-hosted Faz 5 → 7 → 8, sonra S0–S3.
 
+- 2026-11-09 — (Faz 5) Shared `/policy` package: client-IP resolution (XFF
+  trusted only from trusted proxies, walked right-to-left), IP/CIDR + GeoIP
+  allow/deny, approximate sliding-window-counter rate limiter (O(1)/key, LRU
+  bounded, default 100k keys), header rules, and Evaluate/Decision. Used by the
+  relay now and by Caddy in Faz 6.
+- 2026-11-09 — (Faz 5) Global/route IP policy combine order (ROADMAP decision
+  point resolved as suggested): global deny → route deny → route allow →
+  global allow → route default → global default → allow. A policy's rule match
+  beats its default; deny at a higher scope wins. Documented in policy/ip.go.
+- 2026-11-09 — (Faz 5) GeoIP via maxminddb; relay config `geoip_path`. HelloAck
+  advertises CapGeoIP when a DB is loaded. A country rule without a DB does NOT
+  deny (fail-open) and the relay logs a warning; the engine reports GeoMissing.
+- 2026-11-09 — (Faz 5) Policies persist per token in the relay's SQLite
+  (`policies` table) and are enforced after restart and (as a backstop) while
+  the agent is offline. The agent also re-sends PolicySync on reconnect.
+- 2026-11-09 — (Faz 5) AccessEvents flow relay → agent over the control stream
+  as batched `AccessEvent` frames (flush 500ms / 128 events, drop-count under
+  load). The agent keeps a 2048-event ring buffer; `latchd events [--follow]`
+  reads it (SSE for follow). Durable storage is Faz 7.
+- 2026-11-09 — (Faz 5) Relay `/metrics` (Prometheus) on its own listener
+  (`--metrics-addr`, default off; NOTES suggests 127.0.0.1:7070): requests by
+  decision/status, denials by reason, latency, bytes, agent gauge.
+- 2026-11-09 — (Faz 5) Minimal policy CRUD added to the agent API now
+  (`/api/ip-policies`, `/api/rate-limits`, route binding fields) so policies can
+  exist in the store for PolicySync. Full policy management UI is Faz 9; rate
+  limiter memory cap is `DefaultMaxRateKeys` (100k), configurable later.
+
 ## Backlog
 
 - gRPC / h2c end-to-end through the tunnel (needs HTTP/2 to the agent). v1+.

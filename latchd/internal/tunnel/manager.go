@@ -27,6 +27,8 @@ type Manager struct {
 	deps Deps
 	log  *slog.Logger
 
+	events *EventBuffer
+
 	mu      sync.Mutex
 	clients map[string]*handle
 }
@@ -43,8 +45,11 @@ func NewManager(d Deps) *Manager {
 	if d.Logger == nil {
 		d.Logger = slog.Default()
 	}
-	return &Manager{deps: d, log: d.Logger, clients: map[string]*handle{}}
+	return &Manager{deps: d, log: d.Logger, events: NewEventBuffer(DefaultEventBufferSize), clients: map[string]*handle{}}
 }
+
+// Events returns the shared AccessEvent buffer (relay-pushed events).
+func (m *Manager) Events() *EventBuffer { return m.events }
 
 // Run reconciles clients with the store and keeps them running until ctx is
 // cancelled. It blocks.
@@ -52,8 +57,8 @@ func (m *Manager) Run(ctx context.Context) {
 	changes, cancelSub := m.deps.Store.Subscribe()
 	defer cancelSub()
 
-	snap, _ := m.deps.Store.Current()
-	m.reconcile(ctx, snap)
+	snap, version := m.deps.Store.Current()
+	m.reconcile(ctx, snap, version)
 
 	for {
 		select {
@@ -65,13 +70,13 @@ func (m *Manager) Run(ctx context.Context) {
 				m.stopAll()
 				return
 			}
-			m.reconcile(ctx, ch.Snapshot)
+			m.reconcile(ctx, ch.Snapshot, ch.Version)
 		}
 	}
 }
 
 // reconcile creates, updates or removes clients to match the snapshot.
-func (m *Manager) reconcile(ctx context.Context, snap *model.Snapshot) {
+func (m *Manager) reconcile(ctx context.Context, snap *model.Snapshot, version int) {
 	if snap == nil {
 		return
 	}
@@ -100,9 +105,11 @@ func (m *Manager) reconcile(ctx context.Context, snap *model.Snapshot) {
 
 	for id, relay := range desired {
 		specs, targets := buildRoutes(routesByRelay[id])
+		policy := buildPolicy(snap, id, version)
 		h, ok := m.clients[id]
 		if ok && relayEqual(h.relay, relay) {
 			h.client.SetRoutes(specs, targets)
+			h.client.SetPolicy(policy)
 			continue
 		}
 		if ok {
@@ -111,8 +118,9 @@ func (m *Manager) reconcile(ctx context.Context, snap *model.Snapshot) {
 			h.cancel()
 			delete(m.clients, id)
 		}
-		cl := NewClient(relay, m.deps.AgentID, m.deps.AgentVersion, m.log)
+		cl := NewClient(relay, m.deps.AgentID, m.deps.AgentVersion, m.events, m.log)
 		cl.SetRoutes(specs, targets)
+		cl.SetPolicy(policy)
 		cctx, cancel := context.WithCancel(ctx)
 		done := make(chan struct{})
 		nh := &handle{client: cl, relay: relay, cancel: cancel, done: done}
@@ -171,6 +179,49 @@ func buildRoutes(routes []model.Route) ([]tunnel.RouteSpec, map[string]string) {
 	}
 	sort.Slice(specs, func(i, j int) bool { return specs[i].RouteID < specs[j].RouteID })
 	return specs, targets
+}
+
+// buildPolicy assembles the PolicySync for one relay: the IP policies and rate
+// limits referenced by its routes (plus all global ones), and a binding per
+// route. Version is the config version so the relay can detect staleness.
+func buildPolicy(snap *model.Snapshot, relayID string, version int) tunnel.PolicySync {
+	ipByID := map[string]model.IPPolicy{}
+	for _, p := range snap.IPPolicies {
+		ipByID[p.ID] = p
+	}
+	rlByID := map[string]model.RateLimitRule{}
+	for _, r := range snap.RateLimits {
+		rlByID[r.ID] = r
+	}
+	neededIP := map[string]bool{}
+	neededRL := map[string]bool{}
+	var bindings []tunnel.PolicyBinding
+	for _, rt := range snap.Routes {
+		if rt.Exposure != model.ExposureTunnel || rt.RelayID != relayID || !rt.Enabled {
+			continue
+		}
+		b := tunnel.PolicyBinding{RouteID: rt.ID, IPPolicyID: rt.IPPolicyID, RateLimitIDs: rt.RateLimitIDs, Headers: rt.Headers}
+		bindings = append(bindings, b)
+		if rt.IPPolicyID != "" {
+			neededIP[rt.IPPolicyID] = true
+		}
+		for _, id := range rt.RateLimitIDs {
+			neededRL[id] = true
+		}
+	}
+	var ips []model.IPPolicy
+	for _, p := range snap.IPPolicies {
+		if p.Global || neededIP[p.ID] {
+			ips = append(ips, p)
+		}
+	}
+	var rls []model.RateLimitRule
+	for _, r := range snap.RateLimits {
+		if r.Global || neededRL[r.ID] {
+			rls = append(rls, r)
+		}
+	}
+	return tunnel.PolicySync{Version: version, IPPolicies: ips, RateLimits: rls, Bindings: bindings}
 }
 
 // relayEqual reports whether two relays have the same connection parameters.

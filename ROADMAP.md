@@ -269,26 +269,26 @@ TXT; sihirbaz varsayılanı Let's Encrypt production, `--staging` seçeneği var
 ajanda görmesi.
 
 **Teslimatlar**
-- [ ] `/policy` paylaşılan paket (Faz 6'da Caddy middleware olarak da
+- [x] `/policy` paylaşılan paket (Faz 6'da Caddy middleware olarak da
       kullanılır): güvenilir proxy listesine göre istemci IP çözümü; IP/CIDR
       allow-deny değerlendirme (sıra ve varsayılan davranış); GeoIP (mmdb
       okuyucu, ülke kodu); sliding-window rate limiter (anahtar: IP, header,
       path, birleşim; bellek içi, LRU sınırlı); reddetme davranışı
       (403/404/bağlantı kes; 429 + Retry-After veya gecikme); header
       ekle/sil kuralları; `Explain(req) → Decision{Rule, Where, Result}`.
-- [ ] `proto/tunnel`: `PolicySync` (tam snapshot + monoton versiyon + ack),
+- [x] `proto/tunnel`: `PolicySync` (tam snapshot + monoton versiyon + ack),
       `AccessEvent` (zaman, hostname, IP, ülke, metod, path, kod, süre,
       engellenme nedeni, kaynak=relay).
-- [ ] Relay: politika motorunu ingress'e bağlama; politikaları SQLite'ta
+- [x] Relay: politika motorunu ingress'e bağlama; politikaları SQLite'ta
       token/ajan bazında kalıcı tutma (ajan çevrimdışıyken de uygulanır);
       ack ile versiyon bildirimi.
-- [ ] Ajan: route/policy değişince PolicySync gönderme; ack versiyonunu
+- [x] Ajan: route/policy değişince PolicySync gönderme; ack versiyonunu
       izleme; eşleşmezse `relay.syncState = out_of_sync` (Faz 9'da uyarı);
       gelen AccessEvent'leri halka tampona alma (Faz 7'de kalıcı olacak).
-- [ ] GeoIP veritabanı dağıtımı: relay config'te dosya yolu; ajan
+- [x] GeoIP veritabanı dağıtımı: relay config'te dosya yolu; ajan
       `PolicySync` içinde "geoip gerekli" bildirir, dosya yoksa relay ülke
       kurallarını "eşleşmedi" sayar ve uyarı olayı üretir.
-- [ ] Relay `/metrics` (Prometheus): istek, gecikme, kod, engelleme nedeni,
+- [x] Relay `/metrics` (Prometheus): istek, gecikme, kod, engelleme nedeni,
       aktif ajan, tünel sayısı.
 
 **Testler:** politika paketi tablo testleri (IPv4/IPv6, CIDR, XFF güveni,
@@ -298,7 +298,7 @@ relay restart sonrası ve ajan çevrimdışıyken uygulanır; sync versiyon
 uyuşmazlığı tespiti; global vs route politikası önceliği.
 
 **DoD**
-- [ ] SPEC başarı ölçütü (tünel): IP engelle + rate limit koy → engellenen
+- [x] SPEC başarı ölçütü (tünel): IP engelle + rate limit koy → engellenen
       isteklerin relay'de kesildiği ajandaki olay akışında (CLI `latchd events
       --follow` ile) görülüyor.
 

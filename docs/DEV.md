@@ -218,3 +218,58 @@ PEBBLE_CA_FILE=/path/to/pebble.minica.pem make test-acme
 
 This test is behind the `acme_pebble` build tag and excluded from `make test`;
 CI runs it as a separate job.
+
+## Phase 5 — relay policies and the event stream
+
+The relay enforces access policies (IP/CIDR, country, rate limit, headers)
+*before* a request reaches the agent, and streams every decision back to the
+agent so you can watch traffic with `latchd events`.
+
+### Set a policy and watch it work
+
+With a tunnel up (phase 3 walkthrough), create a policy on the agent and bind
+it to a route, then watch the relay enforce it:
+
+```sh
+# Block a CIDR and bind the policy to a route.
+POL=$(curl -s -X POST http://127.0.0.1:4040/api/ip-policies \
+  -d '{"name":"block","rules":[{"action":"deny","cidr":"203.0.113.0/24"}]}' | jq -r .id)
+curl -s -X PUT http://127.0.0.1:4040/api/routes/<route-id> -d "{\"ipPolicyId\":\"$POL\"}"
+
+# A rate limit (2 requests / 60s per IP):
+RL=$(curl -s -X POST http://127.0.0.1:4040/api/rate-limits \
+  -d '{"name":"slow","keys":["ip"],"limit":2,"windowSec":60}' | jq -r .id)
+curl -s -X PUT http://127.0.0.1:4040/api/routes/<route-id> -d "{\"rateLimitIds\":[\"$RL\"]}"
+
+# Watch decisions stream from the relay:
+latchd events --follow
+# 2026-… app.relay.local  203.0.113.9  GET /  -> 403  DENY(ip_policy)
+```
+
+Denied requests are cut at the relay (the agent is never dialed), the agent
+still sees the event, and `latchd status` shows each relay's `syncState`
+(`in_sync`/`out_of_sync`) so you know the relay has your current policy.
+
+### GeoIP
+
+Country rules (`{"action":"deny","country":"RU"}`) need a MaxMind database on
+the relay: `latch-relay run --geoip /path/GeoLite2-Country.mmdb` (or `geoip_path`
+in the config). Without it the relay cannot match country rules — it fails open
+and logs a warning, and `HelloAck` tells the agent GeoIP is unavailable.
+
+### Metrics
+
+```sh
+latch-relay run --dev … --metrics-addr 127.0.0.1:7070
+curl -s http://127.0.0.1:7070/metrics | grep latch_relay_
+# latch_relay_requests_total, latch_relay_denied_total{reason="ip_policy"}, …
+```
+
+### What the policy tests cover
+
+`go test ./policy/` table-tests client-IP/XFF trust, IP/CIDR allow-deny and
+allowlists, the global-vs-route precedence, the sliding window, and header
+rules. `go test ./latch-relay/internal/policies/` covers persistence across a
+restart. `go test ./latch-relay/internal/relay/ -run TestPolicy` is the
+integration test: a denied IP gets 403 and never reaches the agent, the agent
+receives the AccessEvent, and a rate limit returns 429 with Retry-After.

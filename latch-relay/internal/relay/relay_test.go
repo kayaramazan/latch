@@ -14,6 +14,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -130,6 +131,8 @@ type fakeAgent struct {
 	inbox   chan *tunnel.Envelope
 	ack     tunnel.HelloAck
 	closed  chan struct{}
+	evCh    chan model.AccessEvent
+	dials   atomic.Int64
 }
 
 func (h *harness) connectAgent(token, agentID string, targets map[string]string) (*fakeAgent, *tunnel.Envelope) {
@@ -147,7 +150,7 @@ func (h *harness) connectAgent(token, agentID string, targets map[string]string)
 		h.t.Fatal(err)
 	}
 	a := &fakeAgent{t: h.t, conn: conn, mux: mux, ctrl: tunnel.NewCodec(ctrlStream), targets: targets,
-		inbox: make(chan *tunnel.Envelope, 64), closed: make(chan struct{})}
+		inbox: make(chan *tunnel.Envelope, 64), closed: make(chan struct{}), evCh: make(chan model.AccessEvent, 256)}
 	h.t.Cleanup(a.close)
 	if _, err := a.ctrl.Send(tunnel.TypeHello, 0, &tunnel.Hello{ProtoMin: 1, ProtoMax: 1, AgentVersion: "test", AgentID: agentID, Token: token, Capabilities: []string{tunnel.CapTCP}}); err != nil {
 		h.t.Fatal(err)
@@ -190,6 +193,18 @@ func (a *fakeAgent) readLoop() {
 			_, _ = a.ctrl.Send(tunnel.TypePong, env.ID, &tunnel.Pong{TS: p.TS})
 			continue
 		}
+		if env.T == tunnel.TypeAccessEvent {
+			var batch tunnel.AccessEventBatch
+			if env.Decode(&batch) == nil {
+				for _, ev := range batch.Events {
+					select {
+					case a.evCh <- ev:
+					default:
+					}
+				}
+			}
+			continue
+		}
 		a.inbox <- env
 	}
 }
@@ -212,6 +227,7 @@ func (a *fakeAgent) acceptLoop() {
 				_ = st.Close()
 				return
 			}
+			a.dials.Add(1)
 			local, err := net.Dial("tcp", target)
 			if err != nil {
 				_ = tunnel.WriteStatus(st, tunnel.StatusDialFailed)
@@ -237,6 +253,36 @@ func (a *fakeAgent) announce(specs ...tunnel.RouteSpec) tunnel.RouteAck {
 	var ack tunnel.RouteAck
 	_ = env.Decode(&ack)
 	return ack
+}
+
+func (a *fakeAgent) syncPolicy(ps tunnel.PolicySync) tunnel.PolicyAck {
+	a.t.Helper()
+	id, err := a.ctrl.Send(tunnel.TypePolicySync, 0, &ps)
+	if err != nil {
+		a.t.Fatal(err)
+	}
+	env := a.wait(func(e *tunnel.Envelope) bool { return e.Re == id })
+	if env.T != tunnel.TypePolicyAck {
+		a.t.Fatalf("expected PolicyAck, got %s %s", env.T, env.D)
+	}
+	var ack tunnel.PolicyAck
+	_ = env.Decode(&ack)
+	return ack
+}
+
+func (a *fakeAgent) waitEvent(match func(model.AccessEvent) bool) model.AccessEvent {
+	a.t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case ev := <-a.evCh:
+			if match(ev) {
+				return ev
+			}
+		case <-deadline:
+			a.t.Fatal("timeout waiting for access event")
+		}
+	}
 }
 
 func (a *fakeAgent) wait(match func(*tunnel.Envelope) bool) *tunnel.Envelope {
@@ -467,11 +513,12 @@ func TestAuthScopeAndConflicts(t *testing.T) {
 	if env.T != tunnel.TypeError || env.Decode(&e) != nil || e.Code != tunnel.ErrUnknownType || e.Fatal {
 		t.Errorf("unknown type: %s %s", env.T, env.D)
 	}
-	// PolicySync is not handled yet (phase 5): the agent must learn that.
-	id, _ = a.ctrl.Send(tunnel.TypePolicySync, 0, &tunnel.PolicySync{Version: 1})
+	// PolicySync is acknowledged with the installed version (phase 5).
+	id, _ = a.ctrl.Send(tunnel.TypePolicySync, 0, &tunnel.PolicySync{Version: 3})
 	env = a.wait(func(e *tunnel.Envelope) bool { return e.Re == id })
-	if env.T != tunnel.TypeError {
-		t.Errorf("policy sync: %s", env.T)
+	var pack tunnel.PolicyAck
+	if env.T != tunnel.TypePolicyAck || env.Decode(&pack) != nil || pack.Version != 3 {
+		t.Errorf("policy sync: %s %s", env.T, env.D)
 	}
 }
 
@@ -579,4 +626,79 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("condition not met in time")
+}
+
+func TestPolicyIPDeny(t *testing.T) {
+	h := newHarness(t)
+	srv := echoServer(t)
+	tok := h.token("laptop", []string{"*." + relayHost}, false)
+	a, _ := h.connectAgent(tok, "ag_1", map[string]string{"rt_app": srv.Listener.Addr().String()})
+	a.announce(httpSpec("rt_app", "app."+relayHost))
+	a.syncPolicy(tunnel.PolicySync{
+		Version: 1,
+		IPPolicies: []model.IPPolicy{{ID: "pol_block", Rules: []model.IPRule{
+			{Action: model.ActionDeny, CIDR: "127.0.0.0/8"}}}},
+		Bindings: []tunnel.PolicyBinding{{RouteID: "rt_app", IPPolicyID: "pol_block"}},
+	})
+
+	dialsBefore := a.dials.Load()
+	c := h.client()
+	resp, err := c.Get("https://app.relay.test/secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", resp.StatusCode)
+	}
+	if resp.Header.Get("X-Latch-Relay") != "1" {
+		t.Error("deny page should carry the relay marker")
+	}
+	if got := a.dials.Load(); got != dialsBefore {
+		t.Errorf("denied request must not reach the agent (dials %d -> %d)", dialsBefore, got)
+	}
+	ev := a.waitEvent(func(ev model.AccessEvent) bool { return ev.Decision == model.DecisionDeny })
+	if ev.DenyReason != model.DenyIPPolicy || ev.RuleID != "pol_block" || ev.Where != "relay" {
+		t.Errorf("event = %+v", ev)
+	}
+}
+
+func TestPolicyRateLimit(t *testing.T) {
+	h := newHarness(t)
+	srv := echoServer(t)
+	tok := h.token("laptop", []string{"*." + relayHost}, false)
+	a, _ := h.connectAgent(tok, "ag_1", map[string]string{"rt_app": srv.Listener.Addr().String()})
+	a.announce(httpSpec("rt_app", "app."+relayHost))
+	a.syncPolicy(tunnel.PolicySync{
+		Version:    1,
+		RateLimits: []model.RateLimitRule{{ID: "rl1", Keys: []string{"ip"}, Limit: 2, WindowSec: 60}},
+		Bindings:   []tunnel.PolicyBinding{{RouteID: "rt_app", RateLimitIDs: []string{"rl1"}}},
+	})
+
+	c := h.client()
+	for i := 0; i < 2; i++ {
+		resp, err := c.Get("https://app.relay.test/")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("request %d: expected 200, got %d", i, resp.StatusCode)
+		}
+	}
+	resp, err := c.Get("https://app.relay.test/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d", resp.StatusCode)
+	}
+	if resp.Header.Get("Retry-After") == "" {
+		t.Error("429 should include Retry-After")
+	}
+	ev := a.waitEvent(func(ev model.AccessEvent) bool { return ev.DenyReason == model.DenyRateLimit })
+	if ev.Status != http.StatusTooManyRequests {
+		t.Errorf("rate-limit event = %+v", ev)
+	}
 }

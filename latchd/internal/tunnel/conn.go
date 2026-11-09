@@ -89,6 +89,13 @@ func (cn *conn) announce(specs []tunnel.RouteSpec) {
 	}
 }
 
+// syncPolicy sends the full policy snapshot to the relay.
+func (cn *conn) syncPolicy(ps tunnel.PolicySync) {
+	if _, err := cn.ctrl.Send(tunnel.TypePolicySync, 0, &ps); err != nil {
+		cn.c.log.Debug("policy sync failed", "err", err)
+	}
+}
+
 func (cn *conn) closeReason() string {
 	v, _ := cn.reason.Load().(string)
 	return v
@@ -159,8 +166,19 @@ func (cn *conn) readLoop() {
 				cn.close("relay_error:" + e.Code)
 				return
 			}
-		case tunnel.TypePolicyAck, tunnel.TypeAccessEvent:
-			// Phase 5/7; ignored for now.
+		case tunnel.TypePolicyAck:
+			var ack tunnel.PolicyAck
+			if env.Decode(&ack) == nil {
+				cn.c.ackedPolicy.Store(int64(ack.Version))
+			}
+		case tunnel.TypeAccessEvent:
+			var batch tunnel.AccessEventBatch
+			if env.Decode(&batch) == nil && cn.c.events != nil {
+				for _, ev := range batch.Events {
+					ev.RelayID = cn.c.relay.ID
+					cn.c.events.Append(ev)
+				}
+			}
 		default:
 			cn.c.log.Debug("unexpected control message", "type", env.T)
 		}

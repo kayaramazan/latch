@@ -37,6 +37,8 @@ func main() {
 		err = cli.Route(args)
 	case "status":
 		err = cli.Status(args)
+	case "events":
+		err = cli.Events(args)
 	case "version", "-v", "--version":
 		fmt.Println("latchd", Version)
 		return
@@ -66,6 +68,7 @@ Usage:
   latchd route list
   latchd route rm <route-id>
   latchd status
+  latchd events [--follow] [-n N]
   latchd version
 
 Subcommands other than run talk to a running daemon (default http://127.0.0.1:4040,

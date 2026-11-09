@@ -21,11 +21,14 @@ type Config struct {
 	PublicIP   string `yaml:"public_ip,omitempty"`
 	DataDir    string `yaml:"data_dir,omitempty"`
 
-	HTTPSAddr string `yaml:"https_addr,omitempty"`
-	HTTPAddr  string `yaml:"http_addr,omitempty"`
-	AgentAddr string `yaml:"agent_addr,omitempty"`
-	TCPPorts  string `yaml:"tcp_ports,omitempty"`
-	TCPBind   string `yaml:"tcp_bind,omitempty"`
+	HTTPSAddr      string   `yaml:"https_addr,omitempty"`
+	HTTPAddr       string   `yaml:"http_addr,omitempty"`
+	AgentAddr      string   `yaml:"agent_addr,omitempty"`
+	TCPPorts       string   `yaml:"tcp_ports,omitempty"`
+	TCPBind        string   `yaml:"tcp_bind,omitempty"`
+	MetricsAddr    string   `yaml:"metrics_addr,omitempty"`
+	GeoIPPath      string   `yaml:"geoip_path,omitempty"`
+	TrustedProxies []string `yaml:"trusted_proxies,omitempty"`
 
 	ACME ACME `yaml:"acme"`
 

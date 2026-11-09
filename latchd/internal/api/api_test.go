@@ -22,6 +22,12 @@ func (fakeStatus) Status() []tunnel.ClientStatus {
 	return []tunnel.ClientStatus{{RelayID: "rly_x", State: tunnel.StateConnected}}
 }
 
+func (fakeStatus) Events() *tunnel.EventBuffer {
+	b := tunnel.NewEventBuffer(16)
+	b.Append(model.AccessEvent{Hostname: "app.relay.test", Decision: model.DecisionDeny, DenyReason: model.DenyIPPolicy})
+	return b
+}
+
 func newServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "latchd.db"), store.Options{})

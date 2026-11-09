@@ -5,6 +5,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Phase 5: relay policies (IP, GeoIP, rate limit, headers) + PolicySync +
+  AccessEvent. Shared `/policy` package: trusted-proxy client-IP resolution,
+  IP/CIDR and GeoIP (MaxMind mmdb) allow/deny with a documented global/route
+  precedence, an LRU-bounded sliding-window rate limiter, header rules, and an
+  Evaluate/Decision API (used by the relay now, Caddy in phase 6). Relay: a
+  policies layer that persists each token's PolicySync in SQLite and enforces it
+  at ingress before a request reaches the agent (and after restart / while the
+  agent is offline); `/metrics` (Prometheus) on `--metrics-addr`. Protocol:
+  PolicySync is acknowledged with its version; AccessEvents stream relay→agent
+  as batched frames. Agent (`latchd`): sends a full PolicySync per relay on
+  connect and on config change, tracks the ack as an in_sync/out_of_sync state,
+  buffers incoming AccessEvents in a ring, and exposes `latchd events [--follow]`
+  (plus `/api/events` and an SSE stream). Minimal policy CRUD on the agent API
+  (`/api/ip-policies`, `/api/rate-limits`, route binding fields). Verified end to
+  end with the real binaries (IP deny → 403 at the relay, visible in
+  `latchd events` and `/metrics`). See docs/DEV.md.
 - Phase 4: relay TLS/ACME, setup wizard, custom domains. certmagic integration
   (`latch-relay/internal/acme`): a wildcard certificate for the base domain via
   ACME DNS-01 (Cloudflare or a manual-TXT mode) and on-demand certificates for

@@ -139,6 +139,12 @@ var migrations = []string{
 		verified_at TEXT,
 		note        TEXT NOT NULL DEFAULT ''
 	);`,
+	`CREATE TABLE policies (
+		token_id   TEXT PRIMARY KEY REFERENCES tokens(id) ON DELETE CASCADE,
+		version    INTEGER NOT NULL,
+		snapshot   TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	);`,
 }
 
 func (s *Store) migrate(ctx context.Context) error {

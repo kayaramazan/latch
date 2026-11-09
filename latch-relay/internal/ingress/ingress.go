@@ -23,6 +23,7 @@ import (
 
 	"github.com/kayaramazan/latch/latch-relay/internal/registry"
 	"github.com/kayaramazan/latch/latch-relay/internal/session"
+	"github.com/kayaramazan/latch/policy"
 	"github.com/kayaramazan/latch/proto/model"
 	"github.com/kayaramazan/latch/proto/tunnel"
 )
@@ -41,12 +42,27 @@ const (
 type Options struct {
 	Registry *registry.Registry
 	Logger   *slog.Logger
-	// OnEvent receives one AccessEvent per request/connection (may be nil).
+	// OnEvent receives one AccessEvent per request/connection (may be nil);
+	// used for metrics and the local event store.
 	OnEvent func(model.AccessEvent)
+	// OnAgentEvent delivers an event to the agent that owns the route (nil to
+	// skip). The peer comes from the registry entry.
+	OnAgentEvent func(peer registry.Peer, ev model.AccessEvent)
+	// Policy evaluates relay-side policies (nil => allow everything).
+	Policy PolicyEvaluator
+	// TrustedProxies is the relay's trusted-proxy list for client-IP resolution.
+	TrustedProxies []string
 	// TCPBindHost is the host part for TCP tunnel listeners ("" = all).
 	TCPBindHost string
 	// HTTPSPort is used to build redirect URLs (443 omitted).
 	HTTPSPort int
+}
+
+// PolicyEvaluator is the relay policy layer (implemented by internal/policies).
+type PolicyEvaluator interface {
+	Evaluate(tokenID, routeID string, req policy.Request, now time.Time) policy.Decision
+	ApplyRequest(tokenID, routeID string, h http.Header)
+	ApplyResponse(tokenID, routeID string, h http.Header)
 }
 
 // Ingress is safe for concurrent use.
@@ -89,10 +105,22 @@ func New(opts Options) *Ingress {
 				pr.Out.Header.Set("X-Real-IP", ip)
 			}
 		},
-		ErrorHandler: in.proxyError,
-		ErrorLog:     nil,
+		ErrorHandler:   in.proxyError,
+		ModifyResponse: in.modifyResponse,
+		ErrorLog:       nil,
 	}
 	return in
+}
+
+// modifyResponse applies a route's response-phase header rules.
+func (in *Ingress) modifyResponse(resp *http.Response) error {
+	if in.opts.Policy == nil || resp.Request == nil {
+		return nil
+	}
+	if di, ok := resp.Request.Context().Value(dialKey{}).(*dialInfo); ok && di.tokenID != "" {
+		in.opts.Policy.ApplyResponse(di.tokenID, di.routeID, resp.Header)
+	}
+	return nil
 }
 
 // SetHTTPSPort updates the port used in redirects (listeners bound to :0).
@@ -107,8 +135,10 @@ func (in *Ingress) SetRegistry(r *registry.Registry) { in.reg = r }
 type dialKey struct{}
 
 type dialInfo struct {
-	peer registry.Peer
-	hdr  *tunnel.StreamHeader
+	peer    registry.Peer
+	hdr     *tunnel.StreamHeader
+	tokenID string
+	routeID string
 }
 
 func (in *Ingress) dialTunnel(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -134,6 +164,7 @@ func (in *Ingress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ev.RouteID = e.RouteID
+	ev.RelayID = ""
 	if !e.Online() {
 		w.Header().Set("Retry-After", "10")
 		in.deny(w, &ev, http.StatusServiceUnavailable, model.DenyAgentOffline, "Agent offline",
@@ -141,12 +172,34 @@ func (in *Ingress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Relay-side policy: resolve the real client IP and decide before the
+	// request ever reaches the agent.
+	if in.opts.Policy != nil {
+		req := policy.Request{RemoteAddr: r.RemoteAddr, Header: r.Header, Method: r.Method, Path: r.URL.Path, Host: host}
+		d := in.opts.Policy.Evaluate(e.TokenID, e.RouteID, req, start)
+		if d.ClientIP != "" {
+			ev.ClientIP, clientIP = d.ClientIP, d.ClientIP
+		}
+		ev.Country = d.Country
+		if !d.Allow {
+			in.denyPolicy(w, &ev, e.Peer, d)
+			return
+		}
+		if d.DelayMs > 0 {
+			select {
+			case <-time.After(time.Duration(d.DelayMs) * time.Millisecond):
+			case <-r.Context().Done():
+			}
+		}
+		in.opts.Policy.ApplyRequest(e.TokenID, e.RouteID, r.Header)
+	}
+
 	hdr := &tunnel.StreamHeader{RouteID: e.RouteID, Kind: model.KindHTTP, Hostname: host, ClientIP: clientIP,
 		ClientPort: clientPort, TLS: r.TLS != nil, StreamID: newStreamID()}
 	if r.TLS != nil {
 		hdr.SNI = r.TLS.ServerName
 	}
-	ctx := context.WithValue(r.Context(), dialKey{}, &dialInfo{peer: e.Peer, hdr: hdr})
+	ctx := context.WithValue(r.Context(), dialKey{}, &dialInfo{peer: e.Peer, hdr: hdr, tokenID: e.TokenID, routeID: e.RouteID})
 	rec := &recorder{ResponseWriter: w, status: http.StatusOK}
 	in.proxy.ServeHTTP(rec, r.WithContext(ctx))
 
@@ -161,6 +214,58 @@ func (in *Ingress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ev.Decision, ev.DenyReason = model.DecisionDeny, rec.denyReason
 	}
 	in.emit(ev)
+	in.toAgent(e.Peer, ev)
+}
+
+// denyPolicy answers a policy denial (status page or connection drop) and
+// records the event, including on the agent's event stream.
+func (in *Ingress) denyPolicy(w http.ResponseWriter, ev *model.AccessEvent, peer registry.Peer, d policy.Decision) {
+	ev.Decision, ev.DenyReason, ev.RuleID = model.DecisionDeny, d.DenyReason, d.RuleID
+	ev.DurationMs = time.Since(ev.TS).Milliseconds()
+	if d.Drop {
+		ev.Status = 0
+		if hj, ok := w.(interface{ Unwrap() http.ResponseWriter }); ok {
+			_ = hj
+		}
+		if rc := http.NewResponseController(w); rc != nil {
+			if conn, _, err := rc.Hijack(); err == nil {
+				_ = conn.Close()
+			}
+		}
+		in.emit(*ev)
+		in.toAgent(peer, *ev)
+		return
+	}
+	status := d.Status
+	if status == 0 {
+		status = http.StatusForbidden
+	}
+	if d.RetryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(d.RetryAfter))
+	}
+	title, text := policyDenyText(d.DenyReason, status)
+	WriteErrorPage(w, status, title, text, ev.Hostname)
+	ev.Status = status
+	in.emit(*ev)
+	in.toAgent(peer, *ev)
+}
+
+func policyDenyText(reason string, status int) (title, text string) {
+	switch reason {
+	case model.DenyRateLimit:
+		return "Too many requests", "You have sent too many requests. Please slow down and try again shortly."
+	case model.DenyGeo:
+		return "Blocked", "Access from your location is not allowed for this site."
+	default:
+		return "Blocked", "Your request was blocked by this site's access policy."
+	}
+}
+
+// toAgent forwards an event to the owning agent when one is connected.
+func (in *Ingress) toAgent(peer registry.Peer, ev model.AccessEvent) {
+	if peer != nil && in.opts.OnAgentEvent != nil {
+		in.opts.OnAgentEvent(peer, ev)
+	}
 }
 
 func (in *Ingress) deny(w http.ResponseWriter, ev *model.AccessEvent, status int, reason, title, text string) {

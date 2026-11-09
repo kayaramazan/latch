@@ -28,6 +28,13 @@ const (
 	MaxRoutesPerSession        = 256
 	MaxStreamsPerSession       = 4096
 	MaxControlMessagesPerSec   = 50
+
+	// EventBufferSize bounds buffered AccessEvents per session; excess is
+	// dropped and counted (reported in the batch).
+	EventBufferSize = 1024
+	// eventFlushInterval and eventBatchMax bound how AccessEvents are batched.
+	eventFlushInterval = 500 * time.Millisecond
+	eventBatchMax      = 128
 )
 
 // Deps are the collaborators a Manager needs.
@@ -141,6 +148,9 @@ type Session struct {
 	lastPong atomic.Int64 // unix nanos
 	streams  atomic.Int64
 
+	events     chan model.AccessEvent
+	evtDropped atomic.Int64
+
 	closeOnce sync.Once
 	done      chan struct{}
 	reason    atomic.Value // string
@@ -252,7 +262,8 @@ func (s *Session) Close(reason string, goodbye bool) {
 // ends. It blocks; call it in its own goroutine.
 func (m *Manager) Serve(ctx context.Context, conn net.Conn) {
 	s := &Session{m: m, conn: conn, done: make(chan struct{}), connectedAt: time.Now().UTC(),
-		log: m.deps.Logger.With("remote", conn.RemoteAddr().String())}
+		events: make(chan model.AccessEvent, EventBufferSize),
+		log:    m.deps.Logger.With("remote", conn.RemoteAddr().String())}
 	s.id = fmt.Sprintf("ses_%d", m.seq.Add(1))
 
 	mux, err := yamux.Server(conn, tunnel.YamuxConfig())
@@ -274,6 +285,7 @@ func (m *Manager) Serve(ctx context.Context, conn net.Conn) {
 
 	go s.rejectIncomingStreams()
 	go s.pingLoop()
+	go s.eventLoop()
 	s.readLoop()
 
 	m.deps.Registry.Detach(context.Background(), s)
@@ -551,4 +563,45 @@ func (s *Session) handle(env *tunnel.Envelope) bool {
 		_ = s.ctrl.SendError(env.ID, tunnel.ErrUnknownType, fmt.Sprintf("unsupported message type %q", env.T), false)
 	}
 	return false
+}
+
+// SendEvent queues an AccessEvent for delivery to the agent. It never blocks;
+// if the buffer is full the event is dropped and counted.
+func (s *Session) SendEvent(ev model.AccessEvent) {
+	if s.events == nil {
+		return
+	}
+	select {
+	case s.events <- ev:
+	default:
+		s.evtDropped.Add(1)
+	}
+}
+
+// eventLoop batches queued AccessEvents and sends them on the control stream.
+func (s *Session) eventLoop() {
+	t := time.NewTicker(eventFlushInterval)
+	defer t.Stop()
+	batch := make([]model.AccessEvent, 0, eventBatchMax)
+	flush := func() {
+		if len(batch) == 0 {
+			return
+		}
+		dropped := int(s.evtDropped.Swap(0))
+		_, _ = s.ctrl.Send(tunnel.TypeAccessEvent, 0, &tunnel.AccessEventBatch{Events: batch, Dropped: dropped})
+		batch = batch[:0]
+	}
+	for {
+		select {
+		case <-s.done:
+			return
+		case ev := <-s.events:
+			batch = append(batch, ev)
+			if len(batch) >= eventBatchMax {
+				flush()
+			}
+		case <-t.C:
+			flush()
+		}
+	}
 }

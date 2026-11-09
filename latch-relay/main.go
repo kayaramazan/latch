@@ -147,6 +147,9 @@ func cmdRun(args []string) error {
 	acmeStaging := fs.Bool("acme-staging", false, "use the Let's Encrypt staging environment")
 	tcpPorts := fs.String("tcp-ports", "20000-20999", "port pool for TCP tunnels")
 	tcpBind := fs.String("tcp-bind", "", "bind host for TCP tunnel ports (default: all interfaces)")
+	metricsAddr := fs.String("metrics-addr", "", "Prometheus /metrics listen address (empty disables)")
+	geoipPath := fs.String("geoip", "", "path to a MaxMind mmdb for country rules")
+	trustedProxies := fs.String("trusted-proxies", "", "comma-separated CIDRs whose X-Forwarded-For is trusted")
 	logLevel := fs.String("log-level", "info", "debug|info|warn|error")
 	logFormat := fs.String("log-format", "text", "text|json")
 	if err := fs.Parse(args); err != nil {
@@ -177,6 +180,11 @@ func cmdRun(args []string) error {
 		apply("agent-addr", agentAddr, cfg.AgentAddr)
 		apply("tcp-ports", tcpPorts, cfg.TCPPorts)
 		apply("tcp-bind", tcpBind, cfg.TCPBind)
+		apply("metrics-addr", metricsAddr, cfg.MetricsAddr)
+		apply("geoip", geoipPath, cfg.GeoIPPath)
+		if !set["trusted-proxies"] && len(cfg.TrustedProxies) > 0 {
+			*trustedProxies = strings.Join(cfg.TrustedProxies, ",")
+		}
 		apply("log-level", logLevel, cfg.LogLevel)
 		apply("log-format", logFormat, cfg.LogFormat)
 		if cfg.ACME.Enabled && !set["acme"] {
@@ -208,7 +216,8 @@ func cmdRun(args []string) error {
 	r, err := relay.New(relay.Config{
 		DataDir: *dataDir, PublicHost: *publicHost, BaseDomain: *baseDomain,
 		HTTPSAddr: *httpsAddr, HTTPAddr: *httpAddr, AgentAddr: *agentAddr,
-		TCPBindHost: *tcpBind, TCPPortRange: pr, Version: Version, Logger: log,
+		TCPBindHost: *tcpBind, TCPPortRange: pr, MetricsAddr: *metricsAddr, GeoIPPath: *geoipPath,
+		TrustedProxies: splitCSV(*trustedProxies), Version: Version, Logger: log,
 	})
 	if err != nil {
 		return err
@@ -454,4 +463,18 @@ func cmdDevCA(args []string) error {
 
 func loadKeyPair(certFile, keyFile string) (tls.Certificate, error) {
 	return tls.LoadX509KeyPair(certFile, keyFile)
+}
+
+func splitCSV(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

@@ -209,7 +209,7 @@ func TestVersionMismatchReported(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	relay := tr.relayModel("test-relay", "lt_abc_secret")
-	cl := NewClient(relay, "ag_testtesttesttesttesttest", "test", nil)
+	cl := NewClient(relay, "ag_testtesttesttesttesttest", "test", NewEventBuffer(16), nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	go cl.Run(ctx)

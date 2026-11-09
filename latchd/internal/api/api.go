@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/kayaramazan/latch/latchd/internal/store"
@@ -17,9 +18,10 @@ import (
 	"github.com/kayaramazan/latch/proto/model"
 )
 
-// StatusProvider reports live tunnel state (implemented by tunnel.Manager).
+// StatusProvider reports live tunnel state and events (tunnel.Manager).
 type StatusProvider interface {
 	Status() []tunnel.ClientStatus
+	Events() *tunnel.EventBuffer
 }
 
 // Server is the management HTTP API.
@@ -46,11 +48,19 @@ func (s *Server) Handler() http.Handler { return s.mux }
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/status", s.getStatus)
+	s.mux.HandleFunc("GET /api/events", s.getEvents)
+	s.mux.HandleFunc("GET /api/events/stream", s.streamEvents)
 	s.mux.HandleFunc("GET /api/routes", s.listRoutes)
 	s.mux.HandleFunc("POST /api/routes", s.createRoute)
 	s.mux.HandleFunc("GET /api/routes/{id}", s.getRoute)
 	s.mux.HandleFunc("PUT /api/routes/{id}", s.updateRoute)
 	s.mux.HandleFunc("DELETE /api/routes/{id}", s.deleteRoute)
+	s.mux.HandleFunc("GET /api/ip-policies", s.listIPPolicies)
+	s.mux.HandleFunc("POST /api/ip-policies", s.createIPPolicy)
+	s.mux.HandleFunc("DELETE /api/ip-policies/{id}", s.deleteIPPolicy)
+	s.mux.HandleFunc("GET /api/rate-limits", s.listRateLimits)
+	s.mux.HandleFunc("POST /api/rate-limits", s.createRateLimit)
+	s.mux.HandleFunc("DELETE /api/rate-limits/{id}", s.deleteRateLimit)
 	s.mux.HandleFunc("GET /api/relays", s.listRelays)
 	s.mux.HandleFunc("POST /api/relays", s.createRelay)
 	s.mux.HandleFunc("GET /api/relays/{id}", s.getRelay)
@@ -104,6 +114,51 @@ func requireLoopback(addr string) error {
 
 // --- handlers ---
 
+func (s *Server) getEvents(w http.ResponseWriter, r *http.Request) {
+	n := 100
+	if v := r.URL.Query().Get("n"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil {
+			n = parsed
+		}
+	}
+	writeJSON(w, http.StatusOK, s.tun.Events().Recent(n))
+}
+
+func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeErr(w, http.StatusInternalServerError, "streaming unsupported")
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	ch, cancel := s.tun.Events().Subscribe()
+	defer cancel()
+	enc := json.NewEncoder(w)
+	// Replay a small tail first.
+	for _, ev := range s.tun.Events().Recent(20) {
+		_, _ = w.Write([]byte("data: "))
+		_ = enc.Encode(ev)
+		_, _ = w.Write([]byte("\n"))
+	}
+	flusher.Flush()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			_, _ = w.Write([]byte("data: "))
+			_ = enc.Encode(ev)
+			_, _ = w.Write([]byte("\n"))
+			flusher.Flush()
+		}
+	}
+}
+
 func (s *Server) getStatus(w http.ResponseWriter, _ *http.Request) {
 	_, version := s.store.Current()
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -131,15 +186,18 @@ func (s *Server) getRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 type routeInput struct {
-	Name       *string          `json:"name"`
-	Target     *string          `json:"target"`
-	Exposure   *model.Exposure  `json:"exposure"`
-	Kind       *model.RouteKind `json:"kind"`
-	RelayID    *string          `json:"relayId"`
-	Hostnames  *[]string        `json:"hostnames"`
-	PathPrefix *string          `json:"pathPrefix"`
-	TCPPort    *int             `json:"tcpPort"`
-	Enabled    *bool            `json:"enabled"`
+	Name         *string             `json:"name"`
+	Target       *string             `json:"target"`
+	Exposure     *model.Exposure     `json:"exposure"`
+	Kind         *model.RouteKind    `json:"kind"`
+	RelayID      *string             `json:"relayId"`
+	Hostnames    *[]string           `json:"hostnames"`
+	PathPrefix   *string             `json:"pathPrefix"`
+	TCPPort      *int                `json:"tcpPort"`
+	Enabled      *bool               `json:"enabled"`
+	IPPolicyID   *string             `json:"ipPolicyId"`
+	RateLimitIDs *[]string           `json:"rateLimitIds"`
+	Headers      *[]model.HeaderRule `json:"headers"`
 }
 
 func (s *Server) createRoute(w http.ResponseWriter, r *http.Request) {
@@ -311,6 +369,116 @@ func (s *Server) deleteRelay(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) listIPPolicies(w http.ResponseWriter, _ *http.Request) {
+	snap, _ := s.store.Current()
+	writeJSON(w, http.StatusOK, snap.IPPolicies)
+}
+
+func (s *Server) createIPPolicy(w http.ResponseWriter, r *http.Request) {
+	var p model.IPPolicy
+	if !decode(w, r, &p) {
+		return
+	}
+	if p.ID == "" {
+		p.ID = model.NewID(model.PrefixIPPolicy)
+	}
+	res, err := s.store.Update(r.Context(), "api", "create ip policy "+p.Name, func(snap *model.Snapshot) error {
+		snap.IPPolicies = append(snap.IPPolicies, p)
+		return nil
+	})
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	for i := range res.Snapshot.IPPolicies {
+		if res.Snapshot.IPPolicies[i].ID == p.ID {
+			writeJSON(w, http.StatusCreated, res.Snapshot.IPPolicies[i])
+			return
+		}
+	}
+	writeJSON(w, http.StatusCreated, p)
+}
+
+func (s *Server) deleteIPPolicy(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	_, err := s.store.Update(r.Context(), "api", "delete ip policy "+id, func(snap *model.Snapshot) error {
+		out := snap.IPPolicies[:0]
+		found := false
+		for _, p := range snap.IPPolicies {
+			if p.ID == id {
+				found = true
+				continue
+			}
+			out = append(out, p)
+		}
+		if !found {
+			return errNotFound
+		}
+		snap.IPPolicies = out
+		return nil
+	})
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) listRateLimits(w http.ResponseWriter, _ *http.Request) {
+	snap, _ := s.store.Current()
+	writeJSON(w, http.StatusOK, snap.RateLimits)
+}
+
+func (s *Server) createRateLimit(w http.ResponseWriter, r *http.Request) {
+	var rl model.RateLimitRule
+	if !decode(w, r, &rl) {
+		return
+	}
+	if rl.ID == "" {
+		rl.ID = model.NewID(model.PrefixRateLimit)
+	}
+	res, err := s.store.Update(r.Context(), "api", "create rate limit "+rl.Name, func(snap *model.Snapshot) error {
+		snap.RateLimits = append(snap.RateLimits, rl)
+		return nil
+	})
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	for i := range res.Snapshot.RateLimits {
+		if res.Snapshot.RateLimits[i].ID == rl.ID {
+			writeJSON(w, http.StatusCreated, res.Snapshot.RateLimits[i])
+			return
+		}
+	}
+	writeJSON(w, http.StatusCreated, rl)
+}
+
+func (s *Server) deleteRateLimit(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	_, err := s.store.Update(r.Context(), "api", "delete rate limit "+id, func(snap *model.Snapshot) error {
+		out := snap.RateLimits[:0]
+		found := false
+		for _, rl := range snap.RateLimits {
+			if rl.ID == id {
+				found = true
+				continue
+			}
+			out = append(out, rl)
+		}
+		if !found {
+			return errNotFound
+		}
+		snap.RateLimits = out
+		return nil
+	})
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // --- helpers ---
 
 var errNotFound = errors.New("not found")
@@ -342,6 +510,15 @@ func applyRouteInput(rt *model.Route, in *routeInput) {
 	}
 	if in.Enabled != nil {
 		rt.Enabled = *in.Enabled
+	}
+	if in.IPPolicyID != nil {
+		rt.IPPolicyID = *in.IPPolicyID
+	}
+	if in.RateLimitIDs != nil {
+		rt.RateLimitIDs = *in.RateLimitIDs
+	}
+	if in.Headers != nil {
+		rt.Headers = *in.Headers
 	}
 }
 

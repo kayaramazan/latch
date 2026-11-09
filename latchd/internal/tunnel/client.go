@@ -41,22 +41,24 @@ const (
 
 // ClientStatus is a snapshot of one relay client for the management API.
 type ClientStatus struct {
-	RelayID      string    `json:"relayId"`
-	RelayName    string    `json:"relayName"`
-	Addr         string    `json:"addr"`
-	State        State     `json:"state"`
-	ConnectedAt  time.Time `json:"connectedAt,omitempty"`
-	LastError    string    `json:"lastError,omitempty"`
-	BaseDomain   string    `json:"baseDomain,omitempty"`
-	RTTMs        float64   `json:"rttMs"`
-	Reconnects   int64     `json:"reconnects"`
-	Routes       int       `json:"routes"`
-	Accepted     []string  `json:"accepted,omitempty"`
-	Rejected     []string  `json:"rejected,omitempty"`
-	PublicURLs   []string  `json:"publicUrls,omitempty"`
-	StreamsTotal int64     `json:"streamsTotal"`
-	BytesIn      int64     `json:"bytesIn"`
-	BytesOut     int64     `json:"bytesOut"`
+	RelayID       string    `json:"relayId"`
+	RelayName     string    `json:"relayName"`
+	Addr          string    `json:"addr"`
+	State         State     `json:"state"`
+	ConnectedAt   time.Time `json:"connectedAt,omitempty"`
+	LastError     string    `json:"lastError,omitempty"`
+	BaseDomain    string    `json:"baseDomain,omitempty"`
+	RTTMs         float64   `json:"rttMs"`
+	Reconnects    int64     `json:"reconnects"`
+	Routes        int       `json:"routes"`
+	Accepted      []string  `json:"accepted,omitempty"`
+	Rejected      []string  `json:"rejected,omitempty"`
+	PublicURLs    []string  `json:"publicUrls,omitempty"`
+	StreamsTotal  int64     `json:"streamsTotal"`
+	BytesIn       int64     `json:"bytesIn"`
+	BytesOut      int64     `json:"bytesOut"`
+	SyncState     string    `json:"syncState"`
+	PolicyVersion int64     `json:"policyVersion"`
 }
 
 // Client maintains one authenticated tunnel to a single relay, reconnecting
@@ -67,10 +69,14 @@ type Client struct {
 	agentVersion string
 	log          *slog.Logger
 
-	mu      sync.Mutex
-	specs   []tunnel.RouteSpec
-	targets map[string]string
-	active  *conn
+	events *EventBuffer
+
+	mu        sync.Mutex
+	specs     []tunnel.RouteSpec
+	targets   map[string]string
+	policy    tunnel.PolicySync
+	hasPolicy bool
+	active    *conn
 
 	// status fields
 	state       atomic.Value // State
@@ -79,6 +85,8 @@ type Client struct {
 	baseDomain  atomic.Value // string
 	rttNs       atomic.Int64
 	reconnects  atomic.Int64
+	policyVer   atomic.Int64
+	ackedPolicy atomic.Int64
 	streams     atomic.Int64
 	bytesIn     atomic.Int64 // from relay (request bytes to local)
 	bytesOut    atomic.Int64 // to relay (response bytes from local)
@@ -89,12 +97,13 @@ type Client struct {
 
 // NewClient builds a client for one relay. Call SetRoutes before or after
 // Run; Run blocks until ctx is cancelled.
-func NewClient(relay model.Relay, agentID, agentVersion string, log *slog.Logger) *Client {
+func NewClient(relay model.Relay, agentID, agentVersion string, events *EventBuffer, log *slog.Logger) *Client {
 	if log == nil {
 		log = slog.Default()
 	}
 	c := &Client{
 		relay: relay, agentID: agentID, agentVersion: agentVersion,
+		events:  events,
 		targets: map[string]string{},
 		log:     log.With("relay", relay.Name, "relayId", relay.ID),
 	}
@@ -116,6 +125,20 @@ func (c *Client) SetRoutes(specs []tunnel.RouteSpec, targets map[string]string) 
 	c.mu.Unlock()
 	if active != nil {
 		active.announce(specs)
+	}
+}
+
+// SetPolicy replaces the full policy snapshot this client sends to the relay.
+// If connected, it syncs immediately. version should increase monotonically.
+func (c *Client) SetPolicy(ps tunnel.PolicySync) {
+	c.mu.Lock()
+	c.policy = ps
+	c.hasPolicy = true
+	active := c.active
+	c.mu.Unlock()
+	c.policyVer.Store(int64(ps.Version))
+	if active != nil {
+		active.syncPolicy(ps)
 	}
 }
 
@@ -164,8 +187,13 @@ func (c *Client) Run(ctx context.Context) {
 		c.mu.Lock()
 		c.active = cn
 		specs := c.specs
+		ps := c.policy
+		hasPolicy := c.hasPolicy
 		c.mu.Unlock()
 		cn.announce(specs)
+		if hasPolicy {
+			cn.syncPolicy(ps)
+		}
 
 		cn.serve(ctx)
 
@@ -289,7 +317,17 @@ func (c *Client) Status() ClientStatus {
 	}
 	c.mu.Lock()
 	s.Routes = len(c.specs)
+	hasPolicy := c.hasPolicy
 	c.mu.Unlock()
+	s.PolicyVersion = c.policyVer.Load()
+	switch {
+	case !hasPolicy:
+		s.SyncState = "n/a"
+	case st == StateConnected && c.ackedPolicy.Load() == c.policyVer.Load():
+		s.SyncState = "in_sync"
+	default:
+		s.SyncState = "out_of_sync"
+	}
 	return s
 }
 
