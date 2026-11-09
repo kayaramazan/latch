@@ -1,0 +1,27 @@
+# Go
+/bin/
+*.test
+*.out
+coverage.*
+
+# UI / Electron
+node_modules/
+latch-ui/dist/
+electron/dist/
+electron/out/
+
+# Local data & secrets
+*.db
+*.db-*
+*.sqlite
+*.pem
+*.key
+!testdata/**/*.pem
+!testdata/**/*.key
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
