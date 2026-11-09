@@ -89,6 +89,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/apikeys/{id}", s.revokeKey)
 	s.mux.HandleFunc("GET /api/audit", s.audit)
 	s.mux.HandleFunc("GET /api/usage", s.usage)
+	s.mux.HandleFunc("GET /api/plans", s.listPlans)
 	s.mux.HandleFunc("POST /api/billing/checkout", s.checkout)
 	s.mux.HandleFunc("GET /api/account/export", s.exportAccount)
 	s.mux.HandleFunc("DELETE /api/account", s.deleteAccount)

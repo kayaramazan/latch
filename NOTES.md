@@ -426,3 +426,19 @@ Decisions, assumptions and backlog. Newest first within each section.
 - GeoIP DB upload from the UI to the relay over the tunnel. v1+.
 - UI mobile layout. v1+.
 - Multiple sessions of one token load-balancing (currently newest wins). v1+.
+
+## 2026-11-10 — SaaS customer dashboard (latch-control/panel-ui)
+- Decision: build the managed-SaaS customer panel as a proper React SPA mirroring
+  latch-ui's stack (Vite + React 18 + TS + Tailwind + TanStack Query + Recharts),
+  built into latch-control/internal/panel/dist and embedded via go:embed. The old
+  panel was a single hand-written index.html.
+- Why: the user wants to manage tunnels from a dashboard (no terminal) and sell the
+  product as SaaS; the control-plane API (S0–S3) was already complete, only a thin
+  panel existed. No backend behaviour changed except a new read-only GET /api/plans
+  for the billing screen.
+- Verified live against `latch-control serve` (in-memory, dev): dashboard + assets
+  served, signup/login/me, plans, usage, checkout URL, CSRF 403 without token, and
+  token-create returns the expected 503 when no relay has registered in the fleet.
+- Backlog: creating a tunnel needs a managed relay heartbeating into the fleet
+  (hosted-deployment milestone); the downloadable-agent `latchd login` device-auth
+  flow is still terminal-based (relay add / route add).

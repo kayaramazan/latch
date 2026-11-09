@@ -5,6 +5,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **SaaS customer dashboard** (`latch-control/panel-ui`): a React + TypeScript +
+  Tailwind + TanStack Query single-page app, built into
+  `latch-control/internal/panel/dist` and served by the control plane as the
+  customer-facing control panel (replacing the single minimal `index.html`).
+  Screens: email/password + TOTP auth; Overview; Tunnels (create a tunnel, reveal
+  the one-time connection string with ready-to-paste agent commands, revoke);
+  custom Domains (add/verify/delete, plan-gated); Usage (bandwidth/tunnels/domains
+  against plan limits); Billing (plan catalogue + Merchant-of-Record checkout);
+  Download (agent install + connect instructions); Account (2FA setup/enable, API
+  keys, data export, account deletion, sign-out). CSRF + same-origin enforced as
+  before. New read-only `GET /api/plans` exposes the plan catalogue to the UI.
+  `make panel-install` / `panel-build` / `test-panel`.
+
 ### Fixed
 
 - `latch-relay install` now creates the dedicated `latch-relay` system user and

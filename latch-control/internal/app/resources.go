@@ -232,6 +232,11 @@ func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// listPlans returns the public plan catalog (for the billing screen).
+func (s *Server) listPlans(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, 200, plan.All())
+}
+
 // --- api keys ---
 
 func (s *Server) listKeys(w http.ResponseWriter, r *http.Request) {

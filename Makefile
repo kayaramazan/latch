@@ -51,6 +51,17 @@ ui-build:
 test-ui:
 	@[ -f latch-ui/package.json ] && (cd latch-ui && pnpm check-i18n && pnpm test) || echo "latch-ui: nothing to test yet"
 
+# The SaaS customer dashboard (latch-control/panel-ui) builds into
+# latch-control/internal/panel/dist for go:embed.
+panel-install:
+	@[ -f latch-control/panel-ui/package.json ] && (cd latch-control/panel-ui && npm install) || echo "panel-ui: nothing to install yet"
+
+panel-build:
+	@[ -f latch-control/panel-ui/package.json ] && (cd latch-control/panel-ui && npm run build) || echo "panel-ui: nothing to build yet"
+
+test-panel:
+	@[ -f latch-control/panel-ui/package.json ] && (cd latch-control/panel-ui && npm run lint) || echo "panel-ui: nothing to test yet"
+
 test-ui-e2e:
 	@[ -f latch-ui/package.json ] && (cd latch-ui && pnpm exec playwright install --with-deps chromium && pnpm test:e2e) || echo "latch-ui: nothing to test yet"
 
