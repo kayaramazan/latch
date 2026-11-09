@@ -619,3 +619,19 @@ curl -b jar -H "X-CSRF-Token: …" -X DELETE localhost:9000/api/account   # righ
 failure → suspend, recovery → resume, idempotency, bad signature). The full chain
 (free cap → webhook upgrade → cap lifts → metered usage → payment-failure suspend
 cuts the tunnel) was verified by hand with the real binaries.
+
+## Phase 12 — hardening, acceptance, v1.0
+
+- `docs/SECURITY_CHECKLIST.md` — each security control mapped to its code and
+  test (audited for v1.0; no blocking findings).
+- `docs/ACCEPTANCE.md` + `deploy/acceptance/run.sh` — the three SPEC success
+  criteria as a runnable, asserting script (all PASS locally).
+- Fuzzing: `go test ./proto/tunnel/ -run '^$' -fuzz FuzzRecv -fuzztime 30s`
+  (also `FuzzReadStreamHeader`, `FuzzParseConnString`) — no crashes.
+- `deploy/loadtest/` — a tunnel load generator and `RESULTS.md`.
+- `docs/ROADMAP_NEXT.md` — what is intentionally out of v1.0.
+
+Run everything: `make test` (unit + race), `make test-ui` (component + i18n),
+`sh deploy/acceptance/run.sh` (acceptance). `make test-acme` and
+`LATCH_CONTROL_DB=… go test ./latch-control/internal/store/` are the gated
+integration tests (Pebble, PostgreSQL).

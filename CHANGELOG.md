@@ -3,7 +3,15 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.0.0] - 2026-11-09
+
+First stable release. The self-hosted product (reverse proxy + self-hosted
+tunnel, managed from a web UI) is complete and hardened, and the managed-relay
+SaaS control plane (S0–S3) is functional on top of it. Security checklist closed
+(docs/SECURITY_CHECKLIST.md), the three SPEC acceptance scenarios pass
+(docs/ACCEPTANCE.md), the protocol codec and connection-string parser are fuzzed
+with no crashes, and a load test is recorded (deploy/loadtest/RESULTS.md).
+
 
 - Phase 9: web UI (latch-ui). A Vite + React + TypeScript + Tailwind + TanStack
   Query + Recharts single-page app, served by latchd from an embedded build

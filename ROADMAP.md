@@ -494,23 +494,23 @@ Alpine); release pipeline tag'de çalışır.
 kapatmak.
 
 **Teslimatlar**
-- [ ] Güvenlik kontrol listesi (`docs/SECURITY.md` ile eşleştirme): token
+- [x] Güvenlik kontrol listesi (`docs/SECURITY.md` ile eşleştirme): token
       hash/iptal/kapsam, hostname ele geçirme, relay yönetim API'sinin kapalı
       olması, boyut/süre limitleri, slowloris, bağlantı sınırı, tüm iç
       trafikte TLS doğrulaması, XFF güven listesi.
-- [ ] Protokol codec fuzz testleri; yük testi (`deploy/loadtest/`) ve sonuç
+- [x] Protokol codec fuzz testleri; yük testi (`deploy/loadtest/`) ve sonuç
       notu.
-- [ ] Kabul senaryoları (`docs/ACCEPTANCE.md`, betiklerle): (1) tünel
+- [x] Kabul senaryoları (`docs/ACCEPTANCE.md`, betiklerle): (1) tünel
       senaryosu 2 dakika, (2) yerel senaryo, (3) ajan çevrimdışı → geri
       gelme; her biri gerçek VPS'te kaydedilmiş kanıtla.
-- [ ] Hata mesajları gözden geçirme (kullanıcıya dönük her hata eylem
+- [x] Hata mesajları gözden geçirme (kullanıcıya dönük her hata eylem
       öneriyor mu).
-- [ ] `CHANGELOG.md` v1.0.0; `docs/ROADMAP_NEXT.md` (QUIC, dağıtık rate
+- [x] `CHANGELOG.md` v1.0.0; `docs/ROADMAP_NEXT.md` (QUIC, dağıtık rate
       limit, WAF, çoklu kullanıcı, relay kümeleme — v1 kapsam dışı).
 
 **DoD**
-- [ ] SPEC "Başarı ölçütleri" üç madde de kanıtla geçildi.
-- [ ] Açık güvenlik bulgusu yok; v1.0.0 etiketlendi.
+- [x] SPEC "Başarı ölçütleri" üç madde de kanıtla geçildi.
+- [x] Açık güvenlik bulgusu yok; v1.0.0 etiketlendi.
 
 ---
 

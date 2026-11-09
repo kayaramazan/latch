@@ -366,6 +366,23 @@ Decisions, assumptions and backlog. Newest first within each section.
   paying users (red line): self-hosted Faz 11 (packaging) + Faz 12 (security
   review/hardening) as the launch gate.
 
+- 2026-11-09 — (Faz 12) v1.0 hardening + acceptance. Security audit → docs/
+  SECURITY_CHECKLIST.md (15 controls mapped to code + tests; 0 InsecureSkipVerify
+  in the tree, 6/6 http.Servers have ReadHeaderTimeout, body size caps, mTLS
+  control API, tenant isolation, HMAC webhooks; no blocking findings). Fuzzing:
+  FuzzRecv, FuzzReadStreamHeader and a new FuzzParseConnString, 1.4–2.3M execs
+  each, no crashes. Acceptance: deploy/acceptance/run.sh proves the three SPEC
+  criteria (tunnel <120s, local mode via embedded Caddy, offline→recovery <10s) —
+  all PASS locally. Load test: deploy/loadtest (~2.2k rps, p50 7ms through the
+  tunnel on a laptop). ROADMAP_NEXT.md records out-of-v1 items. CHANGELOG cut to
+  1.0.0. Error messages reviewed (each user-facing error names the next action).
+- 2026-11-09 — **v1.0.0.** Self-hosted product (tunnel + local mode + policies +
+  observability + authenticated API + web UI) and the managed-relay SaaS (S0–S3:
+  control API/fleet, accounts/multi-tenancy/self-service, plans/quota/metering/
+  MoR billing) are both functional, tested and hardened. Real-VPS/real-ACME
+  sign-off and a third-party pentest are the launch-day steps before onboarding
+  paying users (the standing red line).
+
 ## Backlog
 
 - latch-ui code-splitting (Recharts) to shrink the main bundle. Faz 9 deferred.
