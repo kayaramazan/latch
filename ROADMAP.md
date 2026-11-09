@@ -514,6 +514,155 @@ kapatmak.
 
 ---
 
+## SaaS Kontrol Düzlemi (ayrı ürün hattı — v1 sonrası)
+
+> Bu, Faz 0–12 ile çıkan **açık kaynak / self-hosted** ürünün üstüne oturan
+> **ayrı bir ürün hattıdır**: operatörün (sen) bir relay filosunu barındırıp
+> hizmeti müşterilere **yönetilen SaaS** olarak sattığı senaryo. Self-hosted
+> ürün bu hat olmadan da tam çalışır; bu fazlar onu bozmaz, bayrak arkasında
+> ekler. **Bağımlılıklar:** Faz 5 (politikalar/rate limit — tenant başına
+> zorlama), Faz 7 (gözlemlenebilirlik/metering), Faz 8 (API + auth desenleri).
+> Faz 6 (yerel mod) ve Faz 10 (Electron) ile ilişkisi yoktur. Önerilen sıra:
+> **5 → 7 → 8 → (self-hosted v1.0 = Faz 12) → S0 → S1 → S2 → S3.**
+
+**Yeni bileşen:** `latch-control` — çok kiracılı kontrol düzlemi (Go servis +
+**PostgreSQL**; SQLite burada yetmez: çok kiracı, HA, ölçek). Relay'ler
+(`latch-relay`) filoyu oluşturur; müşteriler `latchd` ajanını kendi
+makinelerinde çalıştırır.
+
+**Mimari karar (NOTES'ta "CLI-only" kararının kapsamlı gevşetilmesi):** relay'e
+**kimlik doğrulamalı, özel (mTLS, internete kapalı), bayrakla açılan** bir
+kontrol API'si eklenir. "Genel yönetim API'si yok" güvenlik duruşu korunur
+(API publike değil, yalnızca kontrol düzlemi çağırır; self-hosted dağıtımda
+kapalı kalır, CLI ile yönetim devam eder).
+
+| # | Faz | Ana çıktı | Boyut |
+|---|-----|-----------|-------|
+| S0 | SaaS tasarımı + karar kapısı (**onay kapısı**) | `docs/SAAS_*.md`, tehdit modeli, fiyat/plan taslağı | M |
+| S1 | Relay kontrol API'si + filo kaydı | relay mTLS kontrol API, uzaktan token/domain, kullanım raporu | L |
+| S2 | Hesaplar, çok kiracılık, self-service | `latch-control`: auth, hesap/kullanıcı/rol, self-service, yerleştirme | XL |
+| S3 | Planlar, kota, metering, faturalama | plan/kota zorlama, metering hattı, Stripe, uyumluluk | XL |
+
+---
+
+### Faz S0 — SaaS tasarımı ve karar kapısı (onay kapısı)
+
+**Amaç:** Kod yazmadan, SaaS'ın ürün ve mimari kararlarını kapatmak.
+
+**Teslimatlar**
+- [ ] `docs/SAAS_ARCHITECTURE.md`: bileşenler (`latch-control`, relay filosu,
+      ajan), veri akışı, güven sınırları, dağıtım topolojisi.
+- [ ] `docs/SAAS_DATA_MODEL.md`: Account → User (rol) → Project →
+      Token/Domain/Route; plan/kota/kullanım/fatura tabloları (Postgres).
+- [ ] `docs/SAAS_THREAT_MODEL.md`: kiracı izolasyonu, kötüye kullanım
+      (phishing/malware barındırma), DMCA/abuse akışı, TLS-terminasyon
+      sorumluluğu, sır yönetimi.
+- [ ] Fiyatlandırma/plan taslağı (ücretsiz/pro/takım; kota boyutları).
+
+**DoD**
+- [ ] Aşağıdaki **karar noktaları** kullanıcı onayıyla kapandı; S1 başlayabilir.
+
+**Karar noktaları (S0'da kapatılır)**
+- [x] **Model çatalı:** → **(a) yönetilen relay** seçildi (2026-11-09): operatör
+      relay filosunu barındırır, tam SaaS (ngrok benzeri). Metering operatörün
+      kendi relay'lerinden gelir (güvenilir); yerleştirme kontrol düzleminde.
+- [ ] Auth yığını (e-posta+parola, OAuth, MFA), oturum vs API anahtarı.
+- [ ] Faturalama sağlayıcı (öneri: **Stripe**; abonelik + kullanım aşımı).
+- [ ] Kiracı izolasyon modeli (mantıksal `account_id` kapsamı vs relay/kiracı
+      ayrımı), adil kullanım politikası.
+- [ ] Let's Encrypt ölçek stratejisi (çok sayıda özel alan adında rate-limit;
+      alt alanlar için ayrılmış ACME hesap havuzu / olası kendi ara CA'n).
+- [ ] Uyumluluk kapsamı (KVKK/GDPR, veri işleme sözleşmesi, veri ikametgâhı).
+
+---
+
+### Faz S1 — Relay kontrol API'si + filo kaydı
+
+**Amaç:** Operatörün relay'leri uzaktan, güvenli ve otomatik yönetebilmesi;
+kontrol düzleminin tek bir relay'i sürebilmesi.
+
+**Teslimatlar**
+- [ ] Relay'de bayrakla açılan **kontrol API'si** (mTLS, özel arayüz;
+      varsayılan kapalı): token CRUD, custom-domain CRUD, oturum/route listesi,
+      sağlık/kapasite.
+- [ ] **Kullanım raporu:** relay → kontrol düzlemi; bayt, bağlantı, aktif route,
+      AccessEvent özetleri (Faz 7 olay deposundan beslenir).
+- [ ] Filo kaydı: relay `register` + periyodik heartbeat (bölge, sürüm,
+      kapasite, sağlık); kontrol düzlemi relay envanteri tutar.
+- [ ] `latch-control` iskeleti: bir relay'i kaydeder ve token/domain'i uzaktan
+      sürer (henüz tek kiracı, UI yok).
+- [ ] Self-hosted dağıtımda kontrol API'si kapalı kalır; CLI yönetimi bozulmaz.
+
+**Testler:** kontrol API auth (mTLS doğru/yanlış sertifika), uzaktan token/domain
+CRUD, relay çevrimdışıyken kontrol düzlemi davranışı, kullanım raporu doğruluğu.
+
+**DoD**
+- [ ] Kontrol düzleminden token üret → ajan o token'la relay'e bağlanıp tünel
+      açıyor; kullanım raporu kontrol düzleminde görünüyor.
+- [ ] Kontrol API'si internete kapalı; yetkisiz çağrı reddediliyor.
+
+---
+
+### Faz S2 — Hesaplar, çok kiracılık, self-service
+
+**Amaç:** Müşterinin kaydolup kendi token'ını/alan adını kendisinin
+oluşturması; kiracılar arası tam izolasyon.
+
+**Teslimatlar**
+- [ ] `latch-control`: Account/User/rol, kimlik doğrulama (parola + OAuth +
+      MFA), oturum ve API anahtarları, denetim günlüğü (audit log).
+- [ ] Project kapsamı; self-service token ve custom-domain (doğrulama akışı
+      Faz 4 izin fonksiyonunu kullanır).
+- [ ] **Yerleştirme (placement):** hesabı/token'ı uygun relay'e ata, ajana
+      doğru `latch://` bağlantı dizesini ver (yönetilen modelde).
+- [ ] Kiracı izolasyonu: her token/domain/route `account_id` ile etiketli;
+      kontrol düzlemi ve relay bir kiracının başkasının kaynağına erişmesini
+      engeller.
+- [ ] Kötüye kullanım temeli: askıya alma (suspend) akışı, blok listesi, basit
+      alan adı itibar kontrolü; abuse/DMCA giriş noktası.
+- [ ] Müşteriye dönük API; minimal panel (latch-ui desenleriyle) veya API-first.
+
+**Testler:** izolasyon (kiracı A, B'nin kaynağını göremez/değiştiremez),
+kayıt → token → canlı tünel uçtan uca, suspend trafiği kesiyor, audit log
+olayları yakalıyor.
+
+**DoD**
+- [ ] Yeni kullanıcı panelden kaydolup kendi token+alan adıyla 2 dakikada canlı
+      HTTPS tüneli açıyor — operatör müdahalesi yok.
+- [ ] Bir kiracının başka kiracının verisine erişemediği testlerle kanıtlı.
+
+---
+
+### Faz S3 — Planlar, kota, metering, faturalama
+
+**Amaç:** Hizmeti paraya dönüştürmek: planlar, kotalar, ölçülü kullanım ve
+otomatik faturalama.
+
+**Teslimatlar**
+- [ ] Plan/kota modeli: maks token, maks custom domain, eşzamanlı tünel,
+      aylık bant genişliği, rate-limit; plan Account'a bağlı.
+- [ ] **Metering hattı:** relay raporları → kontrol düzlemi hesap başına
+      toplar; soft (uyarı) ve hard (kesme) kota zorlaması.
+- [ ] **Stripe** entegrasyonu: abonelik + kullanım aşımı, webhook'lar (plan
+      değişimi, ödeme başarısız → askıya alma), müşteri fatura portalı.
+- [ ] Kullanım panoları (müşteri) + operatör/admin konsolu (filo, hesaplar,
+      abuse, gelir).
+- [ ] Uyumluluk: ToS/Gizlilik/DPA, GDPR/KVKK veri dışa aktarma & silme,
+      denetim günlüğü saklama.
+
+**Testler:** kota zorlaması (soft/hard), metering doğruluğu (bayt/bağlantı
+mutabakatı), Stripe webhook akışları (test modu), aşım faturalaması, veri
+silme talebi.
+
+**DoD**
+- [ ] Ücretli plana geçiş → kota artıyor; aşımda fatura/kesme doğru çalışıyor.
+- [ ] Ödeme başarısız webhook'u hesabı askıya alıyor; ödeme sonrası geri açıyor.
+
+**Karar noktaları:** ücretsiz plan limitleri; aşım mı sert kesme mi; fatura
+para birimi/vergi (Stripe Tax).
+
+---
+
 ## Kesişen kurallar (her fazda geçerli)
 
 - Kod ve repo dokümanları İngilizce; UI metinleri i18n (en varsayılan, tr).

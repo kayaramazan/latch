@@ -140,6 +140,16 @@ Decisions, assumptions and backlog. Newest first within each section.
   network (permission function, DNS/clock/port checks, wizard rendering, config
   round-trip) is unit-tested here.
 
+- 2026-11-09 — (Planlama) ROADMAP'e **SaaS Kontrol Düzlemi** diye ayrı bir ürün
+  hattı eklendi (Faz S0–S3), self-hosted Faz 0–12'nin üstüne oturur ve onu
+  bozmaz. Yeni bileşen `latch-control` (Go + Postgres). Relay'e bayrakla açılan,
+  mTLS'li, internete kapalı bir kontrol API'si gelir — "genel yönetim API'si
+  yok" kararının SaaS'a özel, kapsamlı gevşetilmesi (self-hosted'da kapalı
+  kalır). Bağımlılık: Faz 5, 7, 8. S0 bir onay kapısı; kapatılacak başlıca
+  karar: **yönetilen relay** mi **BYO-relay + barındırılan kontrol düzlemi** mi.
+  **Karar (2026-11-09): yönetilen relay modeli** seçildi (operatör filoyu
+  barındırır). Uygulama sırası: önce self-hosted Faz 5 → 7 → 8, sonra S0–S3.
+
 ## Backlog
 
 - gRPC / h2c end-to-end through the tunnel (needs HTTP/2 to the agent). v1+.
