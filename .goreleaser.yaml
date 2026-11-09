@@ -61,6 +61,11 @@ release:
     name: latch
   draft: false
   prerelease: auto
+  # Publish the installer alongside the binaries so the one-liner
+  #   curl -sSL .../releases/latest/download/install.sh | sh
+  # resolves to a release asset.
+  extra_files:
+    - glob: ./deploy/install.sh
 
 changelog:
   use: github

@@ -1,25 +1,64 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Copy } from "../lib";
-
-const UNIX = "curl -sSL https://get.latch.dev/install.sh | sh";
-const BREW = "brew install latch/tap/latchd";
-const WIN = "winget install Latch.Agent";
+import { INSTALL, RELEASES_URL, detectOS, OS_LABEL, OS } from "../download";
 
 export function Download() {
+  const [os, setOs] = useState<OS>(detectOS());
+
   return (
     <div className="space-y-4">
       <div className="card">
         <h2 className="font-medium">Install the agent</h2>
         <p className="text-sm text-gray-500">
           The agent (<code>latchd</code>) runs on the machine whose port you want to expose. It connects out to our
-          relay — nothing needs to be open to the internet on your side.
+          relay — nothing needs to be open to the internet on your side. We detected <b>{OS_LABEL[os]}</b>.
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Os title="macOS / Linux" cmd={UNIX} />
-        <Os title="macOS (Homebrew)" cmd={BREW} />
-        <Os title="Windows" cmd={WIN} />
+      {/* OS switcher */}
+      <div className="flex gap-1">
+        {(["mac", "linux", "windows"] as OS[]).map((o) => (
+          <button key={o} className={os === o ? "btn" : "btn-ghost"} onClick={() => setOs(o)}>
+            {OS_LABEL[o]}
+          </button>
+        ))}
+      </div>
+
+      {(os === "mac" || os === "linux" || os === "unknown") && (
+        <div className="card space-y-2">
+          <h3 className="font-medium">One-line install ({OS_LABEL[os === "unknown" ? "linux" : os]})</h3>
+          <div className="flex items-center gap-2">
+            <code className="code flex-1 rounded bg-gray-100 p-2 dark:bg-gray-800">{INSTALL.unix}</code>
+            <Copy text={INSTALL.unix} />
+          </div>
+          <p className="text-xs text-gray-500">Auto-detects your architecture, installs <code>latchd</code> to <code>/usr/local/bin</code>, and is safe to re-run.</p>
+        </div>
+      )}
+
+      {os === "windows" && (
+        <div className="card space-y-2">
+          <h3 className="font-medium">Windows</h3>
+          <p className="text-sm text-gray-500">
+            Download <code>latchd_…_windows_amd64.zip</code> from the releases page, unzip it, and run <code>latchd.exe</code> from a terminal.
+          </p>
+          <a className="btn" href={RELEASES_URL} target="_blank" rel="noopener">Download for Windows ↗</a>
+        </div>
+      )}
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="card space-y-2">
+          <h3 className="font-medium">All downloads</h3>
+          <p className="text-sm text-gray-500">Signed binaries and checksums for every OS and architecture.</p>
+          <a className="btn-ghost" href={RELEASES_URL} target="_blank" rel="noopener">Browse releases ↗</a>
+        </div>
+        <div className="card space-y-2">
+          <h3 className="font-medium">Docker</h3>
+          <div className="flex items-center gap-2">
+            <code className="code flex-1 rounded bg-gray-100 p-2 dark:bg-gray-800">{INSTALL.docker}</code>
+            <Copy text={INSTALL.docker} />
+          </div>
+        </div>
       </div>
 
       <div className="card space-y-2">
@@ -35,18 +74,6 @@ latchd route add --target 127.0.0.1:3000 --tunnel <relay-id> --hostname <your-tu
           <code> latchd run</code> and manage everything from the agent's own local dashboard at
           <code> http://127.0.0.1:4040</code>.
         </p>
-      </div>
-    </div>
-  );
-}
-
-function Os({ title, cmd }: { title: string; cmd: string }) {
-  return (
-    <div className="card space-y-2">
-      <h3 className="font-medium">{title}</h3>
-      <div className="flex items-center gap-2">
-        <code className="code flex-1 rounded bg-gray-100 p-2 dark:bg-gray-800">{cmd}</code>
-        <Copy text={cmd} />
       </div>
     </div>
   );

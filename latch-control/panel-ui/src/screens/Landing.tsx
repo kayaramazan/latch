@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { api, ApiError } from "../api";
+import { Copy } from "../lib";
+import { INSTALL, RELEASES_URL, detectOS, OS_LABEL } from "../download";
 
 /* Minimal inline icon set (heroicons-style outlines). */
 const I = {
@@ -99,6 +101,7 @@ export function Landing({
             Latch
           </div>
           <div className="flex items-center gap-2">
+            <a className="hidden text-sm text-gray-600 hover:text-brand sm:inline dark:text-gray-300" href="#install">Download</a>
             <button className="btn-ghost" onClick={onSignIn}>Sign in</button>
             <button className="btn" onClick={onGetStarted}>Get started</button>
           </div>
@@ -235,6 +238,34 @@ export function Landing({
               <p className="mt-1 text-sm text-gray-500">{d}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Install */}
+      <section id="install" className="mx-auto max-w-4xl px-4 py-20">
+        <div className="mx-auto max-w-2xl text-center">
+          <h2 className="text-3xl font-bold">Install in one line</h2>
+          <p className="mt-3 text-gray-500">We detected <b>{OS_LABEL[detectOS()]}</b>. Install the agent, then connect from your dashboard.</p>
+        </div>
+        <div className="mx-auto mt-8 max-w-2xl space-y-4">
+          <div className="card space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">macOS / Linux</span>
+              <Copy text={INSTALL.unix} label="Copy" />
+            </div>
+            <code className="code block rounded bg-gray-100 p-3 dark:bg-gray-800">{INSTALL.unix}</code>
+          </div>
+          <div className="card space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Docker</span>
+              <Copy text={INSTALL.docker} label="Copy" />
+            </div>
+            <code className="code block rounded bg-gray-100 p-3 dark:bg-gray-800">{INSTALL.docker}</code>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2 text-sm">
+            <a className="btn-ghost" href={RELEASES_URL} target="_blank" rel="noopener">Windows & all downloads ↗</a>
+            <span className="text-gray-400">Signed binaries · macOS, Linux, Windows · amd64 & arm64</span>
+          </div>
         </div>
       </section>
 
