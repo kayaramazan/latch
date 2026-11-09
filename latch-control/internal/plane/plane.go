@@ -29,10 +29,16 @@ type RelayRecord struct {
 }
 
 // Plane is the control-plane skeleton.
+// Meter receives relay heartbeats for per-account usage attribution.
+type Meter interface {
+	IngestHeartbeat(ctx context.Context, hb control.Heartbeat)
+}
+
 type Plane struct {
 	regToken   string
 	clientCert tls.Certificate
 	relayCAs   *x509.CertPool
+	meter      Meter
 	log        *slog.Logger
 
 	mu    sync.Mutex
@@ -44,6 +50,7 @@ type Options struct {
 	RegToken   string          // bearer token relays present on heartbeat
 	ClientCert tls.Certificate // the control plane's client cert for relay mTLS
 	RelayCAs   *x509.CertPool  // trusts relay control servers
+	Meter      Meter           // optional usage sink
 	Logger     *slog.Logger
 }
 
@@ -52,7 +59,7 @@ func New(o Options) *Plane {
 	if o.Logger == nil {
 		o.Logger = slog.Default()
 	}
-	return &Plane{regToken: o.RegToken, clientCert: o.ClientCert, relayCAs: o.RelayCAs,
+	return &Plane{regToken: o.RegToken, clientCert: o.ClientCert, relayCAs: o.RelayCAs, meter: o.Meter,
 		log: o.Logger, fleet: map[string]*RelayRecord{}}
 }
 
@@ -86,6 +93,9 @@ func (p *Plane) heartbeat(w http.ResponseWriter, r *http.Request) {
 		Health: hb.Health, LastSeen: time.Now().UTC(),
 	}
 	p.mu.Unlock()
+	if p.meter != nil {
+		p.meter.IngestHeartbeat(r.Context(), hb)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -162,6 +172,9 @@ func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
 }
+
+// SetMeter installs the usage sink after construction.
+func (p *Plane) SetMeter(m Meter) { p.meter = m }
 
 // PickRelay chooses a relay in region with the fewest tokens (simple placement).
 // region "" matches any. It returns the relay id and whether one was found.

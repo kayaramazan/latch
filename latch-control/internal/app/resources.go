@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kayaramazan/latch/latch-control/internal/auth"
+	"github.com/kayaramazan/latch/latch-control/internal/plan"
 	"github.com/kayaramazan/latch/latch-control/internal/store"
 	"github.com/kayaramazan/latch/proto/control"
 )
@@ -46,6 +47,12 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	acct, _ := s.st.GetAccount(r.Context(), pr.AccountID)
+	pl := plan.Get(acct.PlanID)
+	existing, _ := s.st.ListTokens(r.Context(), pr.AccountID)
+	if activeCount(existing) >= pl.MaxTokens {
+		writeErr(w, 402, "token limit reached for your plan; upgrade to add more")
+		return
+	}
 	relayID, ok := s.fleet.PickRelay(acct.Region)
 	if !ok {
 		writeErr(w, 503, "no relay available in your region yet")
@@ -133,6 +140,16 @@ func (s *Server) createDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	acct, _ := s.st.GetAccount(r.Context(), pr.AccountID)
+	pl := plan.Get(acct.PlanID)
+	if pl.MaxDomains <= 0 {
+		writeErr(w, 402, "custom domains are not available on your plan; upgrade to add one")
+		return
+	}
+	existing, _ := s.st.ListDomains(r.Context(), pr.AccountID)
+	if len(existing) >= pl.MaxDomains {
+		writeErr(w, 402, "custom domain limit reached for your plan")
+		return
+	}
 	relayID, ok := s.fleet.PickRelay(acct.Region)
 	if !ok {
 		writeErr(w, 503, "no relay available")
@@ -185,6 +202,34 @@ func (s *Server) deleteDomain(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.st.DeleteDomain(r.Context(), pr.AccountID, d.ID)
 	w.WriteHeader(204)
+}
+
+// activeCount returns the number of non-revoked tokens.
+func activeCount(ts []store.TunnelToken) int {
+	n := 0
+	for _, t := range ts {
+		if t.Status == "active" {
+			n++
+		}
+	}
+	return n
+}
+
+// usage reports the account's current-month usage against its plan.
+func (s *Server) usage(w http.ResponseWriter, r *http.Request) {
+	pr := s.principalOf(r)
+	acct, _ := s.st.GetAccount(r.Context(), pr.AccountID)
+	pl := plan.Get(acct.PlanID)
+	monthStart := time.Date(time.Now().UTC().Year(), time.Now().UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
+	bin, bout, reqs, _ := s.st.MonthUsage(r.Context(), pr.AccountID, monthStart)
+	toks, _ := s.st.ListTokens(r.Context(), pr.AccountID)
+	doms, _ := s.st.ListDomains(r.Context(), pr.AccountID)
+	writeJSON(w, 200, map[string]any{
+		"plan": pl, "bytesIn": bin, "bytesOut": bout, "bytesTotal": bin + bout,
+		"bandwidthLimit": pl.BandwidthBytes(), "requests": reqs,
+		"tokens": activeCount(toks), "tokenLimit": pl.MaxTokens,
+		"domains": len(doms), "domainLimit": pl.MaxDomains,
+	})
 }
 
 // --- api keys ---

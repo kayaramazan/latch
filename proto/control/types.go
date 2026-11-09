@@ -78,16 +78,17 @@ type Usage struct {
 
 // Health is the relay's self-report (also the heartbeat payload body).
 type Health struct {
-	RelayID    string    `json:"relayId"`
-	Region     string    `json:"region"`
-	Version    string    `json:"version"`
-	PublicHost string    `json:"publicHost"`
-	BaseDomain string    `json:"baseDomain"`
-	Agents     int       `json:"agents"`
-	Routes     int       `json:"routes"`
-	Tokens     int       `json:"tokens"`
-	Usage      Usage     `json:"usage"`
-	ReportedAt time.Time `json:"reportedAt"`
+	RelayID    string           `json:"relayId"`
+	Region     string           `json:"region"`
+	Version    string           `json:"version"`
+	PublicHost string           `json:"publicHost"`
+	BaseDomain string           `json:"baseDomain"`
+	Agents     int              `json:"agents"`
+	Routes     int              `json:"routes"`
+	Tokens     int              `json:"tokens"`
+	Usage      Usage            `json:"usage"`
+	TokenUsage map[string]Usage `json:"tokenUsage,omitempty"`
+	ReportedAt time.Time        `json:"reportedAt"`
 }
 
 // Heartbeat is what a relay pushes to the control plane (register + liveness +

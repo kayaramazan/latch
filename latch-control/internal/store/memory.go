@@ -22,7 +22,12 @@ type Memory struct {
 	domains   map[string]CustomDomain
 	blocklist []blockEntry
 	audit     []AuditEntry
+	usage     map[string]map[string]usageRow // accountID -> YYYY-MM-DD -> row
+	subs      map[string]Subscription
+	billSeen  map[string]bool
 }
+
+type usageRow struct{ bytesIn, bytesOut, requests int64 }
 
 type blockEntry struct{ pattern, reason string }
 
@@ -32,6 +37,7 @@ func NewMemory() *Memory {
 		accounts: map[string]Account{}, users: map[string]User{}, emailIdx: map[string]string{},
 		sessions: map[string]Session{}, apiKeys: map[string]APIKey{}, keyHash: map[string]string{},
 		projects: map[string]Project{}, tokens: map[string]TunnelToken{}, domains: map[string]CustomDomain{},
+		usage: map[string]map[string]usageRow{}, subs: map[string]Subscription{}, billSeen: map[string]bool{},
 	}
 }
 
@@ -234,6 +240,16 @@ func (m *Memory) TokensForAccount(_ context.Context, accountID string) ([]Tunnel
 	return out, nil
 }
 
+func (m *Memory) AccountForToken(_ context.Context, tokenID string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t, ok := m.tokens[tokenID]
+	if !ok {
+		return "", ErrNotFound
+	}
+	return t.AccountID, nil
+}
+
 func (m *Memory) GetToken(_ context.Context, accountID, id string) (TunnelToken, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -345,6 +361,135 @@ func (m *Memory) ListAudit(_ context.Context, accountID string, limit int) ([]Au
 		}
 	}
 	return out, nil
+}
+
+func (m *Memory) SetAccountPlan(_ context.Context, accountID, planID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.accounts[accountID]
+	if !ok {
+		return ErrNotFound
+	}
+	a.PlanID = planID
+	m.accounts[accountID] = a
+	return nil
+}
+
+func dayKey(t time.Time) string { return t.UTC().Format("2006-01-02") }
+
+func (m *Memory) AddUsage(_ context.Context, accountID string, day time.Time, bin, bout, reqs int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.usage[accountID] == nil {
+		m.usage[accountID] = map[string]usageRow{}
+	}
+	k := dayKey(day)
+	r := m.usage[accountID][k]
+	r.bytesIn += bin
+	r.bytesOut += bout
+	r.requests += reqs
+	m.usage[accountID][k] = r
+	return nil
+}
+
+func (m *Memory) MonthUsage(_ context.Context, accountID string, monthStart time.Time) (int64, int64, int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var bin, bout, reqs int64
+	ms := monthStart.UTC().Format("2006-01")
+	for k, r := range m.usage[accountID] {
+		if len(k) >= 7 && k[:7] == ms {
+			bin += r.bytesIn
+			bout += r.bytesOut
+			reqs += r.requests
+		}
+	}
+	return bin, bout, reqs, nil
+}
+
+func (m *Memory) ListAllAccounts(_ context.Context) ([]Account, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]Account, 0, len(m.accounts))
+	for _, a := range m.accounts {
+		out = append(out, a)
+	}
+	return out, nil
+}
+
+func (m *Memory) SetSubscription(_ context.Context, sub Subscription) error {
+	m.mu.Lock()
+	m.subs[sub.AccountID] = sub
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *Memory) GetSubscription(_ context.Context, accountID string) (Subscription, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	sub, ok := m.subs[accountID]
+	if !ok {
+		return Subscription{}, ErrNotFound
+	}
+	return sub, nil
+}
+
+func (m *Memory) RecordBillingEvent(_ context.Context, eventID string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.billSeen[eventID] {
+		return false, nil
+	}
+	m.billSeen[eventID] = true
+	return true, nil
+}
+
+func (m *Memory) ExportAccount(_ context.Context, accountID string) (map[string]any, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.accounts[accountID]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	var users []User
+	for _, u := range m.users {
+		if u.AccountID == accountID {
+			u.PasswordHash, u.TOTPSecret = "", ""
+			users = append(users, u)
+		}
+	}
+	var toks []TunnelToken
+	for _, t := range m.tokens {
+		if t.AccountID == accountID {
+			toks = append(toks, t)
+		}
+	}
+	return map[string]any{"account": a, "users": users, "tokens": toks}, nil
+}
+
+func (m *Memory) DeleteAccount(_ context.Context, accountID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.accounts, accountID)
+	for id, u := range m.users {
+		if u.AccountID == accountID {
+			delete(m.users, id)
+			delete(m.emailIdx, strings.ToLower(u.Email))
+		}
+	}
+	for id, t := range m.tokens {
+		if t.AccountID == accountID {
+			delete(m.tokens, id)
+		}
+	}
+	for id, d := range m.domains {
+		if d.AccountID == accountID {
+			delete(m.domains, id)
+		}
+	}
+	delete(m.usage, accountID)
+	delete(m.subs, accountID)
+	return nil
 }
 
 var _ Store = (*Memory)(nil)

@@ -112,6 +112,15 @@ type CustomDomain struct {
 	CreatedAt  time.Time  `json:"createdAt"`
 }
 
+// Subscription mirrors the MoR subscription state for an account.
+type Subscription struct {
+	AccountID        string    `json:"accountId"`
+	MORSubID         string    `json:"morSubscriptionId"`
+	PlanID           string    `json:"planId"`
+	Status           string    `json:"status"` // trialing | active | past_due | canceled
+	CurrentPeriodEnd time.Time `json:"currentPeriodEnd"`
+}
+
 // AuditEntry records an action.
 type AuditEntry struct {
 	ID         string    `json:"id"`
@@ -156,6 +165,7 @@ type Store interface {
 	GetToken(ctx context.Context, accountID, id string) (TunnelToken, error)
 	SetTokenStatus(ctx context.Context, accountID, id, status string) error
 	TokensForAccount(ctx context.Context, accountID string) ([]TunnelToken, error)
+	AccountForToken(ctx context.Context, tokenID string) (accountID string, err error)
 
 	CreateDomain(ctx context.Context, d CustomDomain) error
 	ListDomains(ctx context.Context, accountID string) ([]CustomDomain, error)
@@ -168,6 +178,18 @@ type Store interface {
 	IsBlocked(ctx context.Context, domain string) (bool, error)
 	AppendAudit(ctx context.Context, e AuditEntry) error
 	ListAudit(ctx context.Context, accountID string, limit int) ([]AuditEntry, error)
+
+	// Plans, metering, billing.
+	SetAccountPlan(ctx context.Context, accountID, planID string) error
+	AddUsage(ctx context.Context, accountID string, day time.Time, bytesIn, bytesOut, requests int64) error
+	MonthUsage(ctx context.Context, accountID string, monthStart time.Time) (bytesIn, bytesOut, requests int64, err error)
+	ListAllAccounts(ctx context.Context) ([]Account, error)
+	SetSubscription(ctx context.Context, sub Subscription) error
+	GetSubscription(ctx context.Context, accountID string) (Subscription, error)
+	RecordBillingEvent(ctx context.Context, morEventID string) (firstTime bool, err error)
+	// ExportAccount returns a GDPR/KVKK data dump; DeleteAccount purges tenant data.
+	ExportAccount(ctx context.Context, accountID string) (map[string]any, error)
+	DeleteAccount(ctx context.Context, accountID string) error
 
 	Close() error
 }

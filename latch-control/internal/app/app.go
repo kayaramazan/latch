@@ -28,21 +28,25 @@ type Fleet interface {
 
 // Options configure the Server.
 type Options struct {
-	Store    store.Store
-	Fleet    Fleet
-	Issuer   string // TOTP issuer label, e.g. "Latch"
-	OpsToken string // bearer for /ops endpoints
-	Region   string // default region for new accounts
-	Logger   *slog.Logger
+	Store           store.Store
+	Fleet           Fleet
+	Issuer          string // TOTP issuer label, e.g. "Latch"
+	OpsToken        string // bearer for /ops endpoints
+	Region          string // default region for new accounts
+	WebhookSecret   string // HMAC secret for MoR billing webhooks
+	CheckoutBaseURL string // MoR hosted-checkout base URL
+	Logger          *slog.Logger
 }
 
 // Server is the customer control plane.
 type Server struct {
-	st    store.Store
-	fleet Fleet
-	mux   *http.ServeMux
-	opts  Options
-	log   *slog.Logger
+	st     store.Store
+	fleet  Fleet
+	mux    *http.ServeMux
+	opts   Options
+	m      *meter
+	warned map[string]bool
+	log    *slog.Logger
 }
 
 // New builds the Server.
@@ -56,7 +60,7 @@ func New(o Options) *Server {
 	if o.Region == "" {
 		o.Region = "eu"
 	}
-	s := &Server{st: o.Store, fleet: o.Fleet, mux: http.NewServeMux(), opts: o, log: o.Logger}
+	s := &Server{st: o.Store, fleet: o.Fleet, mux: http.NewServeMux(), opts: o, m: newMeter(o.Store), log: o.Logger}
 	s.routes()
 	return s
 }
@@ -84,6 +88,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/apikeys", s.createKey)
 	s.mux.HandleFunc("DELETE /api/apikeys/{id}", s.revokeKey)
 	s.mux.HandleFunc("GET /api/audit", s.audit)
+	s.mux.HandleFunc("GET /api/usage", s.usage)
+	s.mux.HandleFunc("POST /api/billing/checkout", s.checkout)
+	s.mux.HandleFunc("GET /api/account/export", s.exportAccount)
+	s.mux.HandleFunc("DELETE /api/account", s.deleteAccount)
+	s.mux.HandleFunc("POST /webhooks/mor", s.morWebhook)
+	s.mux.HandleFunc("GET /ops/accounts", s.opsAccounts)
+	s.mux.HandleFunc("GET /ops/revenue", s.opsRevenue)
 	s.mux.HandleFunc("POST /ops/accounts/{id}/suspend", s.opsSuspend)
 	s.mux.HandleFunc("POST /ops/accounts/{id}/unsuspend", s.opsUnsuspend)
 	s.mux.HandleFunc("POST /ops/blocklist", s.opsBlocklist)
@@ -118,8 +129,12 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			}
 		}
 		// Open endpoints.
-		if p == "/api/signup" || p == "/api/login" || strings.HasPrefix(p, "/ops/") {
-			if strings.HasPrefix(p, "/ops/") && !s.opsAuthed(r) {
+		if p == "/api/signup" || p == "/api/login" || strings.HasPrefix(p, "/webhooks/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if strings.HasPrefix(p, "/ops/") {
+			if !s.opsAuthed(r) {
 				writeErr(w, 401, "ops auth required")
 				return
 			}
@@ -361,4 +376,9 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// StartBackground runs periodic jobs (quota enforcement) until ctx is done.
+func (s *Server) StartBackground(ctx context.Context) {
+	s.quotaLoop(ctx)
 }

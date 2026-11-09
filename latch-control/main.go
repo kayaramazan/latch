@@ -101,6 +101,8 @@ func serve(args []string) error {
 	relayCA := fs.String("relay-ca", "", "PEM CA that signs relay control server certificates")
 	opsToken := fs.String("ops-token", "", "bearer token for /ops endpoints")
 	region := fs.String("region", "eu", "default region for new accounts")
+	webhookSecret := fs.String("webhook-secret", "", "HMAC secret for MoR billing webhooks")
+	checkoutURL := fs.String("checkout-url", "https://checkout.example.com", "MoR hosted-checkout base URL")
 	dbDSN := fs.String("db", "", "PostgreSQL DSN (empty = in-memory, dev only)")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -134,16 +136,20 @@ func serve(args []string) error {
 	} else {
 		log.Warn("using in-memory store (data is lost on restart); set --db for production")
 	}
-	appSrv := app.New(app.Options{Store: st, Fleet: p, OpsToken: *opsToken, Region: *region, Issuer: "Latch", Logger: log})
+	appSrv := app.New(app.Options{Store: st, Fleet: p, OpsToken: *opsToken, Region: *region, Issuer: "Latch",
+		WebhookSecret: *webhookSecret, CheckoutBaseURL: *checkoutURL, Logger: log})
+	p.SetMeter(appSrv)
 
 	top := http.NewServeMux()
 	top.Handle("/relays/", p.Handler())
 	top.Handle("/api/", appSrv.Handler())
 	top.Handle("/ops/", appSrv.Handler())
+	top.Handle("/webhooks/", appSrv.Handler())
 	top.Handle("/", panel.Handler())
 
 	srv := &http.Server{Addr: *listen, Handler: top, ReadHeaderTimeout: 10 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	go appSrv.StartBackground(ctx)
 	defer stop()
 	go func() {
 		<-ctx.Done()

@@ -336,6 +336,36 @@ Decisions, assumptions and backlog. Newest first within each section.
   cannot see the first's tokens; an operator suspend cuts the tunnel (502).
   Postgres validated via `LATCH_CONTROL_DB=... go test ./latch-control/internal/store/`.
 
+- 2026-11-09 — (Faz S3) Monetization. `internal/plan` (free/pro/team catalog with
+  quota limits). Per-token usage on the relay (`usage` keyed by token), carried
+  in the heartbeat as `Health.TokenUsage`; the control plane's `meter` computes
+  cumulative deltas (reset-safe) and attributes them to accounts via
+  `AccountForToken`, into daily `usage_rollup`. Quota enforcement: creation-time
+  caps (tokens/domains per plan) and a 30s loop that soft-warns at 80% and hard-
+  cuts (suspends) hard-capped plans over 100% bandwidth.
+- 2026-11-09 — (Faz S3) Billing is **Merchant-of-Record** (Paddle/LemonSqueezy),
+  per the S0 decision — this supersedes the ROADMAP's 'Stripe' wording. A
+  provider-agnostic HMAC-verified, idempotent webhook (`/webhooks/mor`) maps
+  subscription.active→plan+resume, payment.failed→suspend,
+  subscription.canceled→free. `/api/billing/checkout` returns a hosted-checkout
+  link (passthrough accountId). Tax/VAT is the MoR's responsibility (resolves the
+  S3 'Stripe Tax' decision point).
+- 2026-11-09 — (Faz S3) Customer usage endpoint (`/api/usage`: plan vs. used),
+  operator console (`/ops/accounts`, `/ops/revenue` MRR), and GDPR/KVKK
+  `/api/account/export` + `DELETE /api/account` (revokes fleet tokens then purges;
+  Postgres cascades). Email verification + a full admin UI remain ops/backlog.
+- 2026-11-09 — (Faz S3) DoD verified end to end with real binaries: free→402 on a
+  second token; a MoR webhook upgrades to Pro and the second token then succeeds
+  (201); relay heartbeats meter per-account usage (bytesTotal/requests in
+  /api/usage); a payment.failed webhook suspends the account and cuts the live
+  tunnel (502); the ops console shows status=suspended. Unit tests cover caps,
+  metering deltas, webhook upgrade/fail/resume + idempotency + bad signature.
+- 2026-11-09 — **SaaS track S0–S3 complete.** The managed-relay SaaS is
+  functional: design/gate, relay control API + fleet, accounts/multi-tenancy/
+  self-service, and plans/quota/metering/MoR billing. Remaining before real
+  paying users (red line): self-hosted Faz 11 (packaging) + Faz 12 (security
+  review/hardening) as the launch gate.
+
 ## Backlog
 
 - latch-ui code-splitting (Recharts) to shrink the main bundle. Faz 9 deferred.

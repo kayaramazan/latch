@@ -48,6 +48,8 @@ type Options struct {
 	// OnAgentEvent delivers an event to the agent that owns the route (nil to
 	// skip). The peer comes from the registry entry.
 	OnAgentEvent func(peer registry.Peer, ev model.AccessEvent)
+	// OnUsage records per-token usage (nil to skip).
+	OnUsage func(tokenID string, ev model.AccessEvent)
 	// Policy evaluates relay-side policies (nil => allow everything).
 	Policy PolicyEvaluator
 	// TrustedProxies is the relay's trusted-proxy list for client-IP resolution.
@@ -182,7 +184,7 @@ func (in *Ingress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		ev.Country = d.Country
 		if !d.Allow {
-			in.denyPolicy(w, &ev, e.Peer, d)
+			in.denyPolicy(w, &ev, e.Peer, e.TokenID, d)
 			return
 		}
 		if d.DelayMs > 0 {
@@ -215,11 +217,14 @@ func (in *Ingress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	in.emit(ev)
 	in.toAgent(e.Peer, ev)
+	if in.opts.OnUsage != nil {
+		in.opts.OnUsage(e.TokenID, ev)
+	}
 }
 
 // denyPolicy answers a policy denial (status page or connection drop) and
 // records the event, including on the agent's event stream.
-func (in *Ingress) denyPolicy(w http.ResponseWriter, ev *model.AccessEvent, peer registry.Peer, d policy.Decision) {
+func (in *Ingress) denyPolicy(w http.ResponseWriter, ev *model.AccessEvent, peer registry.Peer, tokenID string, d policy.Decision) {
 	ev.Decision, ev.DenyReason, ev.RuleID = model.DecisionDeny, d.DenyReason, d.RuleID
 	ev.DurationMs = time.Since(ev.TS).Milliseconds()
 	if d.Drop {
@@ -234,6 +239,9 @@ func (in *Ingress) denyPolicy(w http.ResponseWriter, ev *model.AccessEvent, peer
 		}
 		in.emit(*ev)
 		in.toAgent(peer, *ev)
+		if in.opts.OnUsage != nil {
+			in.opts.OnUsage(tokenID, *ev)
+		}
 		return
 	}
 	status := d.Status
@@ -248,6 +256,9 @@ func (in *Ingress) denyPolicy(w http.ResponseWriter, ev *model.AccessEvent, peer
 	ev.Status = status
 	in.emit(*ev)
 	in.toAgent(peer, *ev)
+	if in.opts.OnUsage != nil {
+		in.opts.OnUsage(tokenID, *ev)
+	}
 }
 
 func policyDenyText(reason string, status int) (title, text string) {

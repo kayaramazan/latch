@@ -219,7 +219,7 @@ func (s *Server) Health(ctx context.Context) control.Health {
 		RelayID: s.deps.RelayID, Region: s.deps.Region, Version: s.deps.Version,
 		PublicHost: s.deps.PublicHost, BaseDomain: s.deps.BaseDomain,
 		Agents: len(s.deps.Sessions.Sessions()), Routes: len(s.deps.Registry.Entries()),
-		Tokens: len(toks), Usage: s.deps.Usage.Snapshot(), ReportedAt: time.Now().UTC(),
+		Tokens: len(toks), Usage: s.deps.Usage.Snapshot(), TokenUsage: s.deps.Usage.ByToken(), ReportedAt: time.Now().UTC(),
 	}
 }
 

@@ -73,6 +73,14 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_tokens_account ON tunnel_tokens(account_id);
 CREATE INDEX IF NOT EXISTS idx_domains_account ON custom_domains(account_id);
 CREATE INDEX IF NOT EXISTS idx_audit_account ON audit_log(account_id, created_at);
+CREATE TABLE IF NOT EXISTS usage_rollup (
+  account_id text NOT NULL, day date NOT NULL,
+  bytes_in bigint NOT NULL DEFAULT 0, bytes_out bigint NOT NULL DEFAULT 0, requests bigint NOT NULL DEFAULT 0,
+  PRIMARY KEY (account_id, day));
+CREATE TABLE IF NOT EXISTS subscriptions (
+  account_id text PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  mor_subscription_id text, plan_id text NOT NULL, status text NOT NULL, current_period_end timestamptz);
+CREATE TABLE IF NOT EXISTS billing_events (mor_event_id text PRIMARY KEY, received_at timestamptz NOT NULL DEFAULT now());
 `
 
 func pgErr(err error) error {
@@ -268,6 +276,12 @@ func (p *Postgres) TokensForAccount(ctx context.Context, accountID string) ([]Tu
 	}
 	return out, rows.Err()
 }
+func (p *Postgres) AccountForToken(ctx context.Context, tokenID string) (string, error) {
+	var a string
+	err := p.db.QueryRowContext(ctx, `SELECT account_id FROM tunnel_tokens WHERE id=$1`, tokenID).Scan(&a)
+	return a, pgErr(err)
+}
+
 func (p *Postgres) GetToken(ctx context.Context, accountID, id string) (TunnelToken, error) {
 	t, hs := TunnelToken{}, ""
 	err := p.db.QueryRowContext(ctx, `SELECT id,account_id,COALESCE(project_id,''),relay_id,name,COALESCE(hostnames,''),tcp,status,created_at,last_seen_at FROM tunnel_tokens WHERE id=$1 AND account_id=$2`, id, accountID).
@@ -374,6 +388,93 @@ func nullStr(s string) any {
 		return nil
 	}
 	return s
+}
+
+func (p *Postgres) SetAccountPlan(ctx context.Context, accountID, planID string) error {
+	res, err := p.db.ExecContext(ctx, `UPDATE accounts SET plan_id=$2 WHERE id=$1`, accountID, planID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (p *Postgres) AddUsage(ctx context.Context, accountID string, day time.Time, bin, bout, reqs int64) error {
+	_, err := p.db.ExecContext(ctx, `INSERT INTO usage_rollup (account_id,day,bytes_in,bytes_out,requests)
+		VALUES ($1,$2,$3,$4,$5)
+		ON CONFLICT (account_id,day) DO UPDATE SET bytes_in=usage_rollup.bytes_in+$3, bytes_out=usage_rollup.bytes_out+$4, requests=usage_rollup.requests+$5`,
+		accountID, day.UTC(), bin, bout, reqs)
+	return err
+}
+
+func (p *Postgres) MonthUsage(ctx context.Context, accountID string, monthStart time.Time) (int64, int64, int64, error) {
+	var bin, bout, reqs int64
+	err := p.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(bytes_in),0),COALESCE(SUM(bytes_out),0),COALESCE(SUM(requests),0)
+		FROM usage_rollup WHERE account_id=$1 AND day >= $2`, accountID, monthStart.UTC()).Scan(&bin, &bout, &reqs)
+	return bin, bout, reqs, err
+}
+
+func (p *Postgres) ListAllAccounts(ctx context.Context) ([]Account, error) {
+	rows, err := p.db.QueryContext(ctx, `SELECT id,name,status,plan_id,region,COALESCE(mor_customer_id,''),created_at,suspended_at,COALESCE(suspended_reason,'') FROM accounts`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Account
+	for rows.Next() {
+		var a Account
+		if err := rows.Scan(&a.ID, &a.Name, &a.Status, &a.PlanID, &a.Region, &a.MORCustomerID, &a.CreatedAt, &a.SuspendedAt, &a.SuspendedReason); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+func (p *Postgres) SetSubscription(ctx context.Context, sub Subscription) error {
+	_, err := p.db.ExecContext(ctx, `INSERT INTO subscriptions (account_id,mor_subscription_id,plan_id,status,current_period_end)
+		VALUES ($1,$2,$3,$4,$5)
+		ON CONFLICT (account_id) DO UPDATE SET mor_subscription_id=excluded.mor_subscription_id, plan_id=excluded.plan_id, status=excluded.status, current_period_end=excluded.current_period_end`,
+		sub.AccountID, nullStr(sub.MORSubID), sub.PlanID, sub.Status, sub.CurrentPeriodEnd)
+	return err
+}
+
+func (p *Postgres) GetSubscription(ctx context.Context, accountID string) (Subscription, error) {
+	var sub Subscription
+	err := p.db.QueryRowContext(ctx, `SELECT account_id,COALESCE(mor_subscription_id,''),plan_id,status,COALESCE(current_period_end,now()) FROM subscriptions WHERE account_id=$1`, accountID).
+		Scan(&sub.AccountID, &sub.MORSubID, &sub.PlanID, &sub.Status, &sub.CurrentPeriodEnd)
+	return sub, pgErr(err)
+}
+
+func (p *Postgres) RecordBillingEvent(ctx context.Context, eventID string) (bool, error) {
+	res, err := p.db.ExecContext(ctx, `INSERT INTO billing_events (mor_event_id) VALUES ($1) ON CONFLICT DO NOTHING`, eventID)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}
+
+func (p *Postgres) ExportAccount(ctx context.Context, accountID string) (map[string]any, error) {
+	a, err := p.GetAccount(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	users, _ := p.ListUsers(ctx, accountID)
+	for i := range users {
+		users[i].PasswordHash, users[i].TOTPSecret = "", ""
+	}
+	toks, _ := p.TokensForAccount(ctx, accountID)
+	doms, _ := p.ListDomains(ctx, accountID)
+	aud, _ := p.ListAudit(ctx, accountID, 1000)
+	return map[string]any{"account": a, "users": users, "tokens": toks, "domains": doms, "audit": aud}, nil
+}
+
+func (p *Postgres) DeleteAccount(ctx context.Context, accountID string) error {
+	_, err := p.db.ExecContext(ctx, `DELETE FROM accounts WHERE id=$1`, accountID) // cascades
+	return err
 }
 
 var _ Store = (*Postgres)(nil)

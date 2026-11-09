@@ -570,3 +570,52 @@ token), suspend, blocklist, audit and API keys. `go test ./latch-control/interna
 covers signup + self-service token, isolation (404 across tenants), suspend
 revoking tokens, and CSRF enforcement. The full self-service → live-tunnel →
 isolation → suspend chain was verified by hand with the real binaries.
+
+## SaaS S3 — plans, quota, metering, billing
+
+The managed SaaS is now monetizable. Billing is via a **Merchant-of-Record**
+(Paddle/LemonSqueezy), which handles VAT/sales tax (the S0 decision; this
+supersedes any "Stripe" wording in the roadmap).
+
+### Plans and quotas
+
+The catalog (free/pro/team) lives in `internal/plan`. Each plan caps tokens,
+custom domains, concurrent tunnels, monthly bandwidth and request rate. Token and
+domain creation refuse over-cap requests with HTTP 402 and an upgrade prompt. A
+background loop warns at 80% of the bandwidth allowance and, for hard-capped
+plans (free), suspends the account at 100%.
+
+### Metering
+
+The relay tracks usage per token and reports it in each heartbeat; the control
+plane computes per-token deltas (reset-safe across relay restarts) and rolls them
+up per account per day. `GET /api/usage` shows the account's current-month usage
+against its plan.
+
+### Billing webhooks
+
+```sh
+latch-control serve … --webhook-secret <hmac> --checkout-url https://pay.example/checkout
+```
+
+`POST /webhooks/mor` is HMAC-verified (`X-Mor-Signature`) and idempotent. Events
+map as: `subscription.active`→set plan + resume, `payment.failed`→suspend,
+`subscription.canceled`→downgrade to free. `POST /api/billing/checkout` returns a
+hosted-checkout link carrying the account id as passthrough.
+
+### Operator & compliance
+
+```sh
+curl -H "Authorization: Bearer OPS" localhost:9000/ops/accounts   # accounts + usage + plan
+curl -H "Authorization: Bearer OPS" localhost:9000/ops/revenue    # MRR, accounts by plan
+curl -b jar localhost:9000/api/account/export                     # GDPR/KVKK data dump
+curl -b jar -H "X-CSRF-Token: …" -X DELETE localhost:9000/api/account   # right to erasure
+```
+
+### What the S3 tests cover
+
+`go test ./latch-control/internal/app/` covers plan token caps, metering deltas
+(cumulative heartbeats → correct rollup), the billing webhook (upgrade, payment
+failure → suspend, recovery → resume, idempotency, bad signature). The full chain
+(free cap → webhook upgrade → cap lifts → metered usage → payment-failure suspend
+cuts the tunnel) was verified by hand with the real binaries.

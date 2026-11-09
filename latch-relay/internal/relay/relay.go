@@ -188,12 +188,11 @@ func New(cfg Config) (*Relay, error) {
 	}
 	onEvent := func(ev model.AccessEvent) {
 		r.metrics.Record(ev)
-		r.usage.Record(ev)
 		if cfg.OnEvent != nil {
 			cfg.OnEvent(ev)
 		}
 	}
-	r.ingress = ingress.New(ingress.Options{Logger: cfg.Logger, OnEvent: onEvent, TCPBindHost: cfg.TCPBindHost,
+	r.ingress = ingress.New(ingress.Options{Logger: cfg.Logger, OnEvent: onEvent, OnUsage: r.usage.RecordToken, TCPBindHost: cfg.TCPBindHost,
 		HTTPSPort: httpsPort, Policy: pm, TrustedProxies: cfg.TrustedProxies,
 		OnAgentEvent: func(peer registry.Peer, ev model.AccessEvent) {
 			if s, ok := peer.(*session.Session); ok {

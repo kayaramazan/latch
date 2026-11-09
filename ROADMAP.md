@@ -644,15 +644,15 @@ olayları yakalıyor.
 otomatik faturalama.
 
 **Teslimatlar**
-- [ ] Plan/kota modeli: maks token, maks custom domain, eşzamanlı tünel,
+- [x] Plan/kota modeli: maks token, maks custom domain, eşzamanlı tünel,
       aylık bant genişliği, rate-limit; plan Account'a bağlı.
-- [ ] **Metering hattı:** relay raporları → kontrol düzlemi hesap başına
+- [x] **Metering hattı:** relay raporları → kontrol düzlemi hesap başına
       toplar; soft (uyarı) ve hard (kesme) kota zorlaması.
-- [ ] **Stripe** entegrasyonu: abonelik + kullanım aşımı, webhook'lar (plan
+- [x] **Stripe** entegrasyonu: abonelik + kullanım aşımı, webhook'lar (plan
       değişimi, ödeme başarısız → askıya alma), müşteri fatura portalı.
-- [ ] Kullanım panoları (müşteri) + operatör/admin konsolu (filo, hesaplar,
+- [x] Kullanım panoları (müşteri) + operatör/admin konsolu (filo, hesaplar,
       abuse, gelir).
-- [ ] Uyumluluk: ToS/Gizlilik/DPA, GDPR/KVKK veri dışa aktarma & silme,
+- [x] Uyumluluk: ToS/Gizlilik/DPA, GDPR/KVKK veri dışa aktarma & silme,
       denetim günlüğü saklama.
 
 **Testler:** kota zorlaması (soft/hard), metering doğruluğu (bayt/bağlantı
@@ -660,8 +660,8 @@ mutabakatı), Stripe webhook akışları (test modu), aşım faturalaması, veri
 silme talebi.
 
 **DoD**
-- [ ] Ücretli plana geçiş → kota artıyor; aşımda fatura/kesme doğru çalışıyor.
-- [ ] Ödeme başarısız webhook'u hesabı askıya alıyor; ödeme sonrası geri açıyor.
+- [x] Ücretli plana geçiş → kota artıyor; aşımda fatura/kesme doğru çalışıyor.
+- [x] Ödeme başarısız webhook'u hesabı askıya alıyor; ödeme sonrası geri açıyor.
 
 **Karar noktaları:** ücretsiz plan limitleri; aşım mı sert kesme mi; fatura
 para birimi/vergi (Stripe Tax).
