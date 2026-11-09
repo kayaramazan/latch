@@ -42,7 +42,8 @@ const schema = `
 CREATE TABLE IF NOT EXISTS accounts (
   id text PRIMARY KEY, name text NOT NULL, status text NOT NULL, plan_id text NOT NULL,
   region text NOT NULL, mor_customer_id text, created_at timestamptz NOT NULL,
-  suspended_at timestamptz, suspended_reason text);
+  suspended_at timestamptz, suspended_reason text, trial_expires_at timestamptz);
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS trial_expires_at timestamptz;
 CREATE TABLE IF NOT EXISTS users (
   id text PRIMARY KEY, account_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   email text UNIQUE NOT NULL, password_hash text NOT NULL, role text NOT NULL,
@@ -107,8 +108,8 @@ func (p *Postgres) CreateAccountWithOwner(ctx context.Context, a Account, u User
 		return Account{}, User{}, err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO accounts (id,name,status,plan_id,region,created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
-		a.ID, a.Name, a.Status, a.PlanID, a.Region, a.CreatedAt); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO accounts (id,name,status,plan_id,region,created_at,trial_expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		a.ID, a.Name, a.Status, a.PlanID, a.Region, a.CreatedAt, a.TrialExpiresAt); err != nil {
 		return Account{}, User{}, pgErr(err)
 	}
 	u.AccountID = a.ID
@@ -121,9 +122,14 @@ func (p *Postgres) CreateAccountWithOwner(ctx context.Context, a Account, u User
 
 func (p *Postgres) GetAccount(ctx context.Context, id string) (Account, error) {
 	var a Account
-	err := p.db.QueryRowContext(ctx, `SELECT id,name,status,plan_id,region,COALESCE(mor_customer_id,''),created_at,suspended_at,COALESCE(suspended_reason,'') FROM accounts WHERE id=$1`, id).
-		Scan(&a.ID, &a.Name, &a.Status, &a.PlanID, &a.Region, &a.MORCustomerID, &a.CreatedAt, &a.SuspendedAt, &a.SuspendedReason)
+	err := p.db.QueryRowContext(ctx, `SELECT id,name,status,plan_id,region,COALESCE(mor_customer_id,''),created_at,suspended_at,COALESCE(suspended_reason,''),trial_expires_at FROM accounts WHERE id=$1`, id).
+		Scan(&a.ID, &a.Name, &a.Status, &a.PlanID, &a.Region, &a.MORCustomerID, &a.CreatedAt, &a.SuspendedAt, &a.SuspendedReason, &a.TrialExpiresAt)
 	return a, pgErr(err)
+}
+
+func (p *Postgres) SetAccountTrial(ctx context.Context, id string, until *time.Time) error {
+	_, err := p.db.ExecContext(ctx, `UPDATE accounts SET trial_expires_at=$2 WHERE id=$1`, id, until)
+	return err
 }
 
 func (p *Postgres) SetAccountStatus(ctx context.Context, id, status, reason string) error {
@@ -156,6 +162,12 @@ func (p *Postgres) scanUser(row rowScanner) (User, error) {
 func (p *Postgres) UpdateUser(ctx context.Context, u User) error {
 	_, err := p.db.ExecContext(ctx, `UPDATE users SET totp_secret=$2, totp_enabled_at=$3, email_verified_at=$4, last_login_at=$5 WHERE id=$1`,
 		u.ID, nullStr(u.TOTPSecret), u.TOTPEnabledAt, u.EmailVerifiedAt, u.LastLoginAt)
+	return pgErr(err)
+}
+
+func (p *Postgres) SetUserCredentials(ctx context.Context, userID, email, passwordHash string) error {
+	_, err := p.db.ExecContext(ctx, `UPDATE users SET email=$2, password_hash=$3 WHERE id=$1`,
+		userID, strings.ToLower(email), passwordHash)
 	return pgErr(err)
 }
 
@@ -417,7 +429,7 @@ func (p *Postgres) MonthUsage(ctx context.Context, accountID string, monthStart 
 }
 
 func (p *Postgres) ListAllAccounts(ctx context.Context) ([]Account, error) {
-	rows, err := p.db.QueryContext(ctx, `SELECT id,name,status,plan_id,region,COALESCE(mor_customer_id,''),created_at,suspended_at,COALESCE(suspended_reason,'') FROM accounts`)
+	rows, err := p.db.QueryContext(ctx, `SELECT id,name,status,plan_id,region,COALESCE(mor_customer_id,''),created_at,suspended_at,COALESCE(suspended_reason,''),trial_expires_at FROM accounts`)
 	if err != nil {
 		return nil, err
 	}
@@ -425,7 +437,7 @@ func (p *Postgres) ListAllAccounts(ctx context.Context) ([]Account, error) {
 	var out []Account
 	for rows.Next() {
 		var a Account
-		if err := rows.Scan(&a.ID, &a.Name, &a.Status, &a.PlanID, &a.Region, &a.MORCustomerID, &a.CreatedAt, &a.SuspendedAt, &a.SuspendedReason); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &a.Status, &a.PlanID, &a.Region, &a.MORCustomerID, &a.CreatedAt, &a.SuspendedAt, &a.SuspendedReason, &a.TrialExpiresAt); err != nil {
 			return nil, err
 		}
 		out = append(out, a)

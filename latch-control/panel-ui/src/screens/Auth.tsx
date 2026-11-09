@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { api, ApiError } from "../api";
 
-export function Auth({ onDone }: { onDone: () => void }) {
-  const [mode, setMode] = useState<"login" | "signup">("login");
+export function Auth({ onDone, onBack, initialMode = "login" }: { onDone: () => void; onBack?: () => void; initialMode?: "login" | "signup" }) {
+  const [mode, setMode] = useState<"login" | "signup">(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [accountName, setAccountName] = useState("");
@@ -86,6 +86,11 @@ export function Auth({ onDone }: { onDone: () => void }) {
         <button className="btn w-full" disabled={busy || !email || !password} onClick={submit}>
           {busy ? "…" : mode === "signup" ? "Create account" : "Sign in"}
         </button>
+        {onBack && (
+          <button className="w-full text-center text-xs text-gray-500 hover:text-brand" onClick={onBack}>
+            ← Back to home
+          </button>
+        )}
       </div>
     </div>
   );

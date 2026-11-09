@@ -7,6 +7,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Marketing landing page** for signed-out visitors (`panel-ui`): hero, how-it-works,
+  feature and pricing sections, with calls to action to sign in, create an account,
+  or start an anonymous trial. The dashboard is shown once authenticated.
+- **Anonymous free trial** ("try without signing up"): `POST /api/trial` creates a
+  short-lived guest account (Free plan, 1-hour expiry) and session so the dashboard
+  works immediately; `POST /api/claim` converts a guest into a full account by
+  setting an email + password (keeping its tunnels). A background reaper suspends
+  expired trials, which revokes their tunnels on the fleet. Guardrails: per-IP rate
+  limit on trial creation, Free-plan hard caps, short expiry. The dashboard shows a
+  trial banner with the remaining time and an inline "save my account" form. New
+  store methods `SetAccountTrial` and `SetUserCredentials` (the latter also fixes
+  `UpdateUser`, which never persisted email/password changes).
 - **SaaS customer dashboard** (`latch-control/panel-ui`): a React + TypeScript +
   Tailwind + TanStack Query single-page app, built into
   `latch-control/internal/panel/dist` and served by the control plane as the

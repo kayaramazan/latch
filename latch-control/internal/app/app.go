@@ -46,6 +46,7 @@ type Server struct {
 	opts   Options
 	m      *meter
 	warned map[string]bool
+	trial  *trialGate
 	log    *slog.Logger
 }
 
@@ -60,7 +61,8 @@ func New(o Options) *Server {
 	if o.Region == "" {
 		o.Region = "eu"
 	}
-	s := &Server{st: o.Store, fleet: o.Fleet, mux: http.NewServeMux(), opts: o, m: newMeter(o.Store), log: o.Logger}
+	s := &Server{st: o.Store, fleet: o.Fleet, mux: http.NewServeMux(), opts: o, m: newMeter(o.Store),
+		trial: newTrialGate(), log: o.Logger}
 	s.routes()
 	return s
 }
@@ -71,6 +73,8 @@ func (s *Server) Handler() http.Handler { return s.guard(s.mux) }
 func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/signup", s.signup)
 	s.mux.HandleFunc("POST /api/login", s.login)
+	s.mux.HandleFunc("POST /api/trial", s.startTrial)
+	s.mux.HandleFunc("POST /api/claim", s.claimTrial)
 	s.mux.HandleFunc("POST /api/logout", s.logout)
 	s.mux.HandleFunc("GET /api/me", s.me)
 	s.mux.HandleFunc("POST /api/mfa/setup", s.mfaSetup)
@@ -130,7 +134,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			}
 		}
 		// Open endpoints.
-		if p == "/api/signup" || p == "/api/login" || strings.HasPrefix(p, "/webhooks/") {
+		if p == "/api/signup" || p == "/api/login" || p == "/api/trial" || strings.HasPrefix(p, "/webhooks/") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -379,7 +383,9 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// StartBackground runs periodic jobs (quota enforcement) until ctx is done.
+// StartBackground runs periodic jobs (quota enforcement, trial reaping) until
+// ctx is done.
 func (s *Server) StartBackground(ctx context.Context) {
+	go s.trialLoop(ctx)
 	s.quotaLoop(ctx)
 }

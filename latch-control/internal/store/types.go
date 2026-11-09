@@ -41,6 +41,9 @@ type Account struct {
 	CreatedAt       time.Time  `json:"createdAt"`
 	SuspendedAt     *time.Time `json:"suspendedAt,omitempty"`
 	SuspendedReason string     `json:"suspendedReason,omitempty"`
+	// TrialExpiresAt is set for anonymous "try without signing up" accounts; the
+	// account's tunnels are revoked once it passes. nil for normal accounts.
+	TrialExpiresAt *time.Time `json:"trialExpiresAt,omitempty"`
 }
 
 // User is a member of an account.
@@ -141,9 +144,14 @@ type Store interface {
 	CreateAccountWithOwner(ctx context.Context, acct Account, owner User) (Account, User, error)
 	GetAccount(ctx context.Context, id string) (Account, error)
 	SetAccountStatus(ctx context.Context, id, status, reason string) error
+	// SetAccountTrial sets (or clears, with nil) an account's trial expiry.
+	SetAccountTrial(ctx context.Context, id string, until *time.Time) error
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUser(ctx context.Context, id string) (User, error)
 	UpdateUser(ctx context.Context, u User) error
+	// SetUserCredentials sets a user's login email and password hash (used when a
+	// guest claims a trial account). Returns ErrConflict if the email is taken.
+	SetUserCredentials(ctx context.Context, userID, email, passwordHash string) error
 	ListUsers(ctx context.Context, accountID string) ([]User, error)
 
 	// Sessions & API keys.

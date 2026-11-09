@@ -56,6 +56,18 @@ func (m *Memory) CreateAccountWithOwner(_ context.Context, acct Account, owner U
 	return acct, owner, nil
 }
 
+func (m *Memory) SetAccountTrial(_ context.Context, id string, until *time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.accounts[id]
+	if !ok {
+		return ErrNotFound
+	}
+	a.TrialExpiresAt = until
+	m.accounts[id] = a
+	return nil
+}
+
 func (m *Memory) GetAccount(_ context.Context, id string) (Account, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -112,6 +124,25 @@ func (m *Memory) UpdateUser(_ context.Context, u User) error {
 		return ErrNotFound
 	}
 	m.users[u.ID] = u
+	return nil
+}
+
+func (m *Memory) SetUserCredentials(_ context.Context, userID, email, passwordHash string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	u, ok := m.users[userID]
+	if !ok {
+		return ErrNotFound
+	}
+	email = strings.ToLower(email)
+	if other, taken := m.emailIdx[email]; taken && other != userID {
+		return ErrConflict
+	}
+	delete(m.emailIdx, strings.ToLower(u.Email))
+	u.Email = email
+	u.PasswordHash = passwordHash
+	m.users[userID] = u
+	m.emailIdx[email] = userID
 	return nil
 }
 

@@ -1,7 +1,10 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { api, setCsrf, Me } from "../api";
 import { Auth } from "../screens/Auth";
+import { Landing } from "../screens/Landing";
+import { TrialBanner } from "../screens/Claim";
 import { Overview } from "../screens/Overview";
 import { Tunnels } from "../screens/Tunnels";
 import { Domains } from "../screens/Domains";
@@ -34,7 +37,7 @@ export function App() {
     return <div className="p-8 text-sm text-gray-500">Loading…</div>;
   }
   if (me.isError || !me.data) {
-    return <Auth onDone={() => me.refetch()} />;
+    return <PublicArea onDone={() => me.refetch()} />;
   }
 
   const m = me.data;
@@ -66,6 +69,10 @@ export function App() {
         ))}
       </nav>
 
+      {m.account.trialExpiresAt && (
+        <TrialBanner expiresAt={m.account.trialExpiresAt} onClaimed={() => me.refetch()} />
+      )}
+
       <main>
         <Routes>
           <Route path="/" element={<Overview me={m} />} />
@@ -80,4 +87,20 @@ export function App() {
       </main>
     </div>
   );
+}
+
+// PublicArea is shown to signed-out visitors: a landing page that leads to the
+// auth form or starts an anonymous trial.
+function PublicArea({ onDone }: { onDone: () => void }) {
+  const [view, setView] = useState<"landing" | "login" | "signup">("landing");
+  if (view === "landing") {
+    return (
+      <Landing
+        onSignIn={() => setView("login")}
+        onGetStarted={() => setView("signup")}
+        onDone={onDone}
+      />
+    );
+  }
+  return <Auth onDone={onDone} onBack={() => setView("landing")} initialMode={view} />;
 }

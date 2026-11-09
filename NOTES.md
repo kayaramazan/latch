@@ -442,3 +442,24 @@ Decisions, assumptions and backlog. Newest first within each section.
 - Backlog: creating a tunnel needs a managed relay heartbeating into the fleet
   (hosted-deployment milestone); the downloadable-agent `latchd login` device-auth
   flow is still terminal-based (relay add / route add).
+
+## 2026-11-10 — Landing page + anonymous free trial
+- Decision: add a marketing landing page for signed-out visitors and an anonymous
+  "try without signing up" trial. Trial = short-lived guest account (Free plan,
+  1h) + session; POST /api/trial (public, per-IP rate limited), POST /api/claim
+  converts guest -> real account (sets email+password, clears trial). A reaper
+  (StartBackground) suspends expired trials, revoking their tunnels via the
+  existing suspend flow.
+- Why: user wants a simple front door — land, optionally try free without an
+  account, then convert. Keeps friction near zero while funnelling to signup.
+- Security note: anonymous public tunnels are an abuse vector (phishing/malware).
+  Guardrails shipped: short expiry, Free-plan hard caps, per-IP rate limit
+  (in-memory), auto-revoke on expiry. BEFORE real launch add: captcha on trial,
+  verified email before public exposure, per-IP limits in the store (not memory)
+  for multi-instance, and tie into the abuse blocklist + the pentest red line.
+- Fixed along the way: Postgres UpdateUser never wrote email/password (only
+  totp/login fields); memory UpdateUser didn't reindex email. Added
+  SetUserCredentials to both stores; claim uses it. Added SetAccountTrial and an
+  idempotent `ALTER TABLE accounts ADD COLUMN IF NOT EXISTS trial_expires_at`.
+- Verified live (in-memory serve) + unit tests: trial->use->claim->login, reaper
+  suspends+revokes, per-IP rate limit returns 429 on the 3rd+ attempt.

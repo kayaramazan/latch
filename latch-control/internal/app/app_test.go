@@ -317,3 +317,73 @@ func TestWebhookBadSignature(t *testing.T) {
 		t.Fatalf("bad signature should 401, got %d", resp.StatusCode)
 	}
 }
+
+// TestTrialClaimAndLogin covers the anonymous-trial lifecycle: start a trial
+// without signing up, use it, then claim it into a real account and log in.
+func TestTrialClaimAndLogin(t *testing.T) {
+	srv, _, _, _ := newApp(t)
+	c := newClient(t, srv.URL)
+
+	// Start a trial with no credentials.
+	resp, _ := c.do("POST", "/api/trial", map[string]any{})
+	if resp.StatusCode != 201 {
+		t.Fatalf("trial: want 201, got %d", resp.StatusCode)
+	}
+	_, me := c.do("GET", "/api/me", nil)
+	c.csrf, _ = me["csrfToken"].(string)
+	acct, _ := me["account"].(map[string]any)
+	if acct["trialExpiresAt"] == nil {
+		t.Fatal("trial account should have trialExpiresAt")
+	}
+
+	// A guest can create a tunnel (the fleet is faked).
+	if resp, _ := c.do("POST", "/api/tokens", map[string]any{"name": "guestapp"}); resp.StatusCode != 201 {
+		t.Fatalf("guest token: want 201, got %d", resp.StatusCode)
+	}
+
+	// Claim the account.
+	if resp, out := c.do("POST", "/api/claim", map[string]string{"email": "claimed@example.com", "password": "password123"}); resp.StatusCode != 200 {
+		t.Fatalf("claim: want 200, got %d (%v)", resp.StatusCode, out)
+	}
+	_, me2 := c.do("GET", "/api/me", nil)
+	acct2, _ := me2["account"].(map[string]any)
+	if acct2["trialExpiresAt"] != nil {
+		t.Fatal("claimed account should have no trialExpiresAt")
+	}
+
+	// The claimed credentials work on a fresh client.
+	c2 := newClient(t, srv.URL)
+	if resp, _ := c2.do("POST", "/api/login", map[string]string{"email": "claimed@example.com", "password": "password123"}); resp.StatusCode != 200 {
+		t.Fatalf("login after claim: want 200, got %d", resp.StatusCode)
+	}
+}
+
+// TestTrialReaper verifies an expired trial is suspended and its tunnels revoked.
+func TestTrialReaper(t *testing.T) {
+	srv, s, st, fr := newApp(t)
+	c := newClient(t, srv.URL)
+	c.do("POST", "/api/trial", map[string]any{})
+	_, me := c.do("GET", "/api/me", nil)
+	c.csrf, _ = me["csrfToken"].(string)
+	acct, _ := me["account"].(map[string]any)
+	accountID, _ := acct["id"].(string)
+	c.do("POST", "/api/tokens", map[string]any{"name": "doomed"})
+
+	// Force the trial into the past and run the reaper.
+	past := time.Now().Add(-time.Minute)
+	if err := st.SetAccountTrial(context.Background(), accountID, &past); err != nil {
+		t.Fatal(err)
+	}
+	s.reapTrials(context.Background())
+
+	a, _ := st.GetAccount(context.Background(), accountID)
+	if a.Status != store.AccountSuspended {
+		t.Fatalf("expired trial should be suspended, got %q", a.Status)
+	}
+	fr.mu.Lock()
+	n := len(fr.revoked)
+	fr.mu.Unlock()
+	if n == 0 {
+		t.Fatal("expired trial should have its tunnels revoked on the relay")
+	}
+}

@@ -46,7 +46,7 @@ export type Plan = {
 };
 export type Account = {
   id: string; name: string; status: string; planId: string; region: string;
-  createdAt: string; suspendedAt?: string; suspendedReason?: string;
+  createdAt: string; suspendedAt?: string; suspendedReason?: string; trialExpiresAt?: string;
 };
 export type User = {
   id: string; accountId: string; email: string; role: string;
