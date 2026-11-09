@@ -49,6 +49,7 @@
   "addroute.step1": "What are you publishing?",
   "addroute.step2": "How should it be reached?",
   "addroute.targetHelp": "Local address, e.g. 127.0.0.1:3000",
+  "addroute.detected": "Detected local ports — click to use",
   "addroute.tunnel": "Tunnel (through a relay)",
   "addroute.local": "Local (this public-IP server)",
   "addroute.pickRelay": "Relay",

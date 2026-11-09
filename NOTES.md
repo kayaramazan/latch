@@ -396,6 +396,22 @@ Decisions, assumptions and backlog. Newest first within each section.
   protocol negotiation (v1, clear mismatch message + UI warning, already in code).
   README quick start covers both scenarios.
 
+- 2026-11-09 — (Faz 10) Desktop shell + local-port suggestion. `latchd/internal/
+  localports` detects listening TCP ports (lsof on macOS/Linux, netstat on
+  Windows; IPv4/IPv6 deduped, wildcard→127.0.0.1), exposed at `GET /api/local/
+  ports`; the Add-route UI shows them as clickable chips so users pick a port
+  instead of typing (the SPEC 'auto-detect listening ports' step). Verified live:
+  28 ports detected on this machine with process names.
+- 2026-11-09 — (Faz 10) `/electron`: a thin shell with **no product logic**.
+  `src/daemon.cjs` (unit-tested: findOpenPort, waitForListening, DaemonController
+  with port-conflict retry) spawns the bundled latchd, waits for its API, and the
+  window loads `http://127.0.0.1:<port>`; a tray menu (open, open logs, quit),
+  electron-updater, hide-to-tray. `electron-builder.yml` targets macOS (dmg +
+  notarization note), Windows (nsis), Linux (AppImage, deb). docs/RELEASE_CHECKLIST
+  .md has the per-OS packaging + smoke list. Three-platform packaging runs on CI
+  OS runners (not reproducible on one host); the daemon lifecycle logic is tested
+  here (node --test, 3/3).
+
 ## Backlog
 
 - latch-ui code-splitting (Recharts) to shrink the main bundle. Faz 9 deferred.

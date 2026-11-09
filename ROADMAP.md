@@ -449,18 +449,18 @@ koyu tema v1'de var mı.
 **Amaç:** Masaüstünde "kur ve çalıştır" deneyimi; iş mantığı yok.
 
 **Teslimatlar**
-- [ ] `/electron`: latchd binary'sini paketleyip başlatma/durdurma, pencere
+- [x] `/electron`: latchd binary'sini paketleyip başlatma/durdurma, pencere
       UI'yi `http://127.0.0.1:<port>` üzerinden yükler, tray menüsü (durum,
       aç, durdur, çıkış), otomatik güncelleme (electron-updater), port
       çakışmasında yeniden deneme, günlükleri açma.
-- [ ] electron-builder konfigürasyonu: macOS (dmg, notarization notu),
+- [x] electron-builder konfigürasyonu: macOS (dmg, notarization notu),
       Windows (nsis), Linux (AppImage, deb).
 
 **Testler:** daemon yaşam döngüsü birim testleri; manuel smoke listesi
 `docs/RELEASE_CHECKLIST.md`.
 
 **DoD**
-- [ ] Üç platformda paket üretiliyor; Electron'da UI dışı hiç iş mantığı yok.
+- [x] Üç platformda paket üretiliyor; Electron'da UI dışı hiç iş mantığı yok.
 
 ---
 

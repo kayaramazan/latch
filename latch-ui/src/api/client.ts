@@ -80,6 +80,7 @@ export type Explanation = {
   result: string; denyReason?: string; ruleId?: string;
   steps: { stage: string; detail: string; matched: boolean; result?: string }[];
 };
+export type LocalPort = { port: number; address: string; process?: string; pid?: number };
 export type Status = {
   version: string; configVersion: number; relays: RelayStatus[]; health?: Record<string, string>;
 };

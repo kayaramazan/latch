@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api/client";
-import { useRelays } from "../api/hooks";
+import { useRelays, useLocalPorts } from "../api/hooks";
 import { useT } from "../i18n";
 
 export function AddRoute() {
   const t = useT();
   const nav = useNavigate();
   const { data: relays } = useRelays();
+  const { data: ports } = useLocalPorts();
   const [step, setStep] = useState(1);
   const [target, setTarget] = useState("");
   const [mode, setMode] = useState<"tunnel" | "local">("tunnel");
@@ -51,6 +52,20 @@ export function AddRoute() {
             <input className="input" placeholder="127.0.0.1:3000" value={target}
               onChange={(e) => setTarget(e.target.value)} data-testid="target" autoFocus />
             <p className="text-xs text-gray-500 mt-1">{t("addroute.targetHelp")}</p>
+            {ports && ports.length > 0 && (
+              <div className="mt-2">
+                <p className="text-xs text-gray-500 mb-1">{t("addroute.detected")}</p>
+                <div className="flex flex-wrap gap-1.5" data-testid="port-suggestions">
+                  {ports.map((p) => (
+                    <button key={p.port} type="button"
+                      className="pill border border-gray-300 dark:border-gray-700 hover:border-brand"
+                      onClick={() => setTarget(p.address)} data-testid={`port-${p.port}`}>
+                      :{p.port}{p.process ? ` ${p.process}` : ""}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <div className="flex justify-end">
             <button className="btn" disabled={!target} onClick={() => setStep(2)} data-testid="next">{t("common.next")}</button>

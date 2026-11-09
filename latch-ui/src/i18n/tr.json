@@ -49,6 +49,7 @@
   "addroute.step1": "Neyi yayınlıyorsunuz?",
   "addroute.step2": "Nasıl erişilsin?",
   "addroute.targetHelp": "Yerel adres, örn. 127.0.0.1:3000",
+  "addroute.detected": "Açık yerel portlar — tıklayıp kullan",
   "addroute.tunnel": "Tünel (relay üzerinden)",
   "addroute.local": "Yerel (public IP'li bu sunucu)",
   "addroute.pickRelay": "Relay",

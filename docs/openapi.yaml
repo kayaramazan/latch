@@ -60,6 +60,14 @@ paths:
         '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
         '401': {description: Authentication required}
         '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/local/ports:
+    get:
+      summary: GET /api/local/ports
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
   /api/status:
     get:
       summary: GET /api/status

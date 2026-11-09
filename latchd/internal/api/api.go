@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kayaramazan/latch/latchd/internal/events"
+	"github.com/kayaramazan/latch/latchd/internal/localports"
 	"github.com/kayaramazan/latch/latchd/internal/store"
 	"github.com/kayaramazan/latch/latchd/internal/tunnel"
 	"github.com/kayaramazan/latch/latchd/internal/web"
@@ -81,6 +82,7 @@ func (s *Server) routeTable() []routeDef {
 		{"POST", "/api/auth/logout", s.logout},
 		{"GET", "/api/auth/me", s.authMe},
 		{"GET", "/api/status", s.getStatus},
+		{"GET", "/api/local/ports", s.localPorts},
 		{"GET", "/metrics", s.serveMetrics},
 		{"GET", "/api/events", s.getEvents},
 		{"GET", "/api/events/stream", s.streamEvents},
@@ -337,6 +339,10 @@ func (s *Server) serveMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.metrics.ServeHTTP(w, r)
+}
+
+func (s *Server) localPorts(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, localports.List())
 }
 
 func (s *Server) getStatus(w http.ResponseWriter, _ *http.Request) {

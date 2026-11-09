@@ -21,7 +21,7 @@ minutes.
 | `latchd`      | Agent/daemon (Go). Embeds Caddy for local mode, runs tunnel clients, serves the management API and the UI. |
 | `latch-relay` | Relay server (Go). Runs on your VPS, terminates TLS, routes by hostname to connected agents, enforces IP/rate-limit policies. |
 | `latch-ui`    | Web UI (React + TypeScript), served by `latchd`.                          |
-| `electron`    | Thin desktop shell around the UI (tray, start/stop daemon, auto-update). |
+| `electron`    | Desktop shell (tray, start/stop the daemon, auto-update) — no business logic. |
 
 ## Status
 
@@ -50,6 +50,7 @@ On the machine with the service you want to expose:
 latchd relay add --url 'latch://relay.example.com:7443/?token=…'
 latchd route add --target 127.0.0.1:3000 --tunnel <relay> --hostname app.relay.example.com
 # → https://app.relay.example.com is live with valid HTTPS
+# (the web UI auto-detects your listening ports and suggests them)
 ```
 
 Open `http://127.0.0.1:4040` for the web UI (set a password with

@@ -1,0 +1,21 @@
+{
+  "name": "latch-desktop",
+  "version": "1.0.0",
+  "description": "Latch desktop shell \u2014 manages the latchd agent and loads its UI. No business logic.",
+  "main": "src/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/daemon.test.cjs",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "33.2.0",
+    "electron-builder": "25.1.8"
+  },
+  "dependencies": {
+    "electron-updater": "6.3.9"
+  }
+}

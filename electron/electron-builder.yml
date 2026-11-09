@@ -1,0 +1,29 @@
+appId: com.latch.desktop
+productName: Latch
+copyright: Apache-2.0
+directories:
+  output: dist
+files:
+  - "src/**/*"
+  - "package.json"
+# The latchd binary is placed in resources/bin/ by the release pipeline
+# (goreleaser builds it per-platform) and bundled here.
+extraResources:
+  - from: "resources/bin"
+    to: "bin"
+    filter: ["**/*"]
+mac:
+  category: public.app-category.developer-tools
+  target: [dmg]
+  hardenedRuntime: true
+  # Notarization: set APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID in CI
+  # and electron-builder notarizes via notarytool. See docs/RELEASE_CHECKLIST.md.
+win:
+  target: [nsis]
+linux:
+  target: [AppImage, deb]
+  category: Network
+publish:
+  provider: github
+  owner: kayaramazan
+  repo: latch

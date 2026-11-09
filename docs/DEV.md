@@ -649,3 +649,31 @@ Releases are cut by goreleaser on a tag (`.goreleaser.yaml` →
 amd64/arm64), a cosign-signed `checksums.txt`, and multi-arch container images on
 `ghcr.io`. `deploy/install.sh --version vX.Y.Z` installs a specific release.
 Protocol/version compatibility is documented in `docs/COMPAT.md`.
+
+## Phase 10 — desktop shell & local-port suggestion
+
+The agent detects your machine's listening ports so the UI can suggest them:
+
+```sh
+curl -s http://127.0.0.1:4040/api/local/ports
+# [{"port":3000,"address":"127.0.0.1:3000","process":"node"}, …]
+```
+
+The **Add route** screen shows these as clickable chips — pick a running port
+instead of typing an address.
+
+`/electron` is a thin desktop shell with **no product logic** (latchd owns
+everything):
+
+```sh
+cd electron
+npm install            # electron + electron-builder (downloads the Electron binary)
+npm test               # daemon-controller unit tests (node --test)
+# place the matching latchd binary in resources/bin/ first, then:
+npm start              # launches the shell: starts latchd, loads its UI, adds a tray
+npm run dist:mac|win|linux   # package per OS (see docs/RELEASE_CHECKLIST.md)
+```
+
+`src/daemon.cjs` finds a free port, spawns latchd, waits for its API (retrying on
+a port conflict) and stops it on quit; `src/main.cjs` only manages the window,
+tray and auto-update.
