@@ -140,10 +140,10 @@ yoksa delta mı; saklanacak maksimum versiyon sayısı (öneri: 200, ayarlanabil
 tünele iletmesi (test içi sahte ajanla).
 
 **Teslimatlar**
-- [ ] `proto/tunnel`: mesaj zarfı (`type`, `version`, `id`, `payload`),
+- [x] `proto/tunnel`: mesaj zarfı (`type`, `version`, `id`, `payload`),
       codec (uzunluk önekli, maksimum boyut), tüm mesaj tipleri, sürüm
       müzakeresi, hata kodları. `PROTOCOL.md` taslaktan nihai hale getirilir.
-- [ ] Oturum katmanı: yamux üzerinde control stream (ilk stream) + veri
+- [x] Oturum katmanı: yamux üzerinde control stream (ilk stream) + veri
       stream'leri; Ping/Pong ile ölü bağlantı tespiti; graceful close.
 - [ ] `latch-relay/internal/auth`: token üretimi (rastgele 32 byte, base64url),
       yalnızca hash (argon2id veya SHA-256+salt; NOTES'a yaz) saklama, kapsam
@@ -156,14 +156,14 @@ tünele iletmesi (test içi sahte ajanla).
       yamux stream'e iletme (hijack + raw forward; WebSocket şeffaf geçer);
       `X-Forwarded-For/-Proto/-Host` ekleme; ajan çevrimdışıysa açıklayıcı
       503 sayfası; bilinmeyen host için 404.
-- [ ] TCP tünel: route başına relay'de ayrılmış port; port havuzu config'te.
-- [ ] Relay SQLite deposu (token'lar, rotalar, ayarlar) + `latch-relay` CLI:
+- [x] TCP tünel: route başına relay'de ayrılmış port; port havuzu config'te.
+- [x] Relay SQLite deposu (token'lar, rotalar, ayarlar) + `latch-relay` CLI:
       `run`, `token create --hostnames a.relay.example.com,*.x.example.com`,
       `token list`, `token revoke`.
 - [ ] Geliştirme TLS'i: `latch-relay dev-ca init` kendi CA'sını üretir;
       sertifika doğrulaması asla atlanmaz, ajan bu CA'yı `--ca-file` ile
       güvenir (SPEC güvenlik maddesi).
-- [ ] İstek sınırları: başlık/gövde boyutu, `ReadHeaderTimeout`, bağlantı
+- [x] İstek sınırları: başlık/gövde boyutu, `ReadHeaderTimeout`, bağlantı
       sayısı üst sınırı (temel; Faz 12'de sertleşir).
 
 **Testler:** codec round-trip + fuzz tohumu; sahte ajanla entegrasyon: HTTPS
@@ -172,7 +172,7 @@ token reddi; kapsam dışı hostname reddi; iki ajan aynı hostname → ikinci r
 ajan kopunca 503.
 
 **DoD**
-- [ ] `PROTOCOL.md` koda birebir uygun; her mesaj tipi için örnek.
+- [x] `PROTOCOL.md` koda birebir uygun; her mesaj tipi için örnek.
 - [ ] Entegrasyon testleri yeşil (`go test ./latch-relay/...`).
 - [ ] `latch-relay run --dev` ile elle test: `curl --cacert` ile 503 sayfası.
 

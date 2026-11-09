@@ -1,6 +1,6 @@
 # Latch tunnel protocol (draft, protocol version 1)
 
-Status: **draft for phase 0 approval**; becomes normative in phase 2.
+Status: **normative since phase 2**; `proto/tunnel` is the executable form.
 
 ## Overview
 
@@ -97,8 +97,15 @@ Direction: A = agent, R = relay.
 ```
 
 - Announce is a **full set**: routes not present are withdrawn (idempotent
-  resync after reconnect). `RouteWithdraw { routeIds[] }` exists for fast
-  single removals.
+  resync after reconnect). `RouteWithdraw { "routeIds": ["rt_…"] }` exists for
+  fast single removals and is answered with an empty `RouteAck`.
+- Hostnames are lowercased by the relay. A `pathPrefix` is normalized (trailing
+  slash removed, "" → "/"); the longest matching prefix wins at request time.
+- TCP routes: `tcpPort: 0` lets the relay pick the lowest free port, and a route
+  that reconnects gets its previous port back while it is still reserved.
+- The same token may be used from several agents (`agentId`); a hostname is
+  served by whichever agent announced it last. A second connection with the
+  same token **and** the same `agentId` replaces the first (`Goodbye{superseded}`).
 - Rejection codes: `ERR_SCOPE`, `ERR_HOSTNAME_TAKEN` (bound to another token),
   `ERR_INVALID`, `ERR_TCP_PORT_UNAVAILABLE`, `ERR_TCP_NOT_ALLOWED`.
 
@@ -139,6 +146,7 @@ queued events and sets `"dropped": n` on the next batch.
 ```
 
 `fatal: true` means the sender will close the connection after this frame.
+With `ERR_VERSION` the relay adds `"relayMin"` and `"relayMax"`.
 
 ### Goodbye (both directions)
 
@@ -172,12 +180,14 @@ Opened by the relay for each inbound connection. First bytes on the stream:
 unknown/disabled, `0x03` agent busy. On non-zero status the relay serves a 502
 page (HTTP) or closes (TCP) and emits an `AccessEvent` with `denyReason`.
 
-For `http` streams the relay forwards the **raw** client bytes (after TLS
-termination) and rewrites only the first request's `X-Forwarded-For`,
-`X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Real-IP` headers; everything else,
-including WebSocket upgrades and HTTP/1.1 keep-alive, passes untouched.
-HTTP/2 is terminated at the relay and forwarded as HTTP/1.1 to the agent (v1).
-The agent, in turn, speaks plain HTTP/1.1 to the local target.
+For `http` streams the relay terminates HTTP (HTTP/1.1 and HTTP/2 on the
+public side) and forwards each request as **one HTTP/1.1 request per data
+stream** (`Connection: close`), with `X-Forwarded-For`, `X-Forwarded-Proto`,
+`X-Forwarded-Host` and `X-Real-IP` set from the real client (any inbound
+values are replaced). WebSocket upgrades are passed through: after a `101` the
+stream carries raw bytes in both directions. Request and response bodies are
+streamed, not buffered. The agent speaks plain HTTP/1.1 to the local target.
+Stream reuse across requests is a possible v1+ optimisation.
 
 For `tcp` streams, if the route has `proxyProtocol: true` the agent writes a
 PROXY protocol v2 header to the local target before copying bytes.
@@ -217,6 +227,8 @@ reason in the UI.
 | `ERR_TCP_PORT_UNAVAILABLE` | no | requested port in use / outside pool |
 | `ERR_TCP_NOT_ALLOWED` | no | token scope forbids TCP |
 | `ERR_RATE_LIMITED` | no | too many control messages (>50/s) |
+| `ERR_SUPERSEDED` | yes | same token and agentId connected again (sent as Goodbye) |
+| `ERR_TOO_MANY_SESSIONS` | yes | token already has the maximum number of agents connected |
 | `ERR_INTERNAL` | varies | relay-side failure |
 
 ## Limits (relay defaults)

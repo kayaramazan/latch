@@ -4,6 +4,28 @@ Decisions, assumptions and backlog. Newest first within each section.
 
 ## Decisions
 
+- 2026-11-09 — Phase 2 — HTTP forwarding uses `httputil.ReverseProxy` over a
+  custom `DialContext` that opens a yamux stream per request, not a raw byte
+  hijack. Why: the public side gets HTTP/2 and WebSocket handling from stdlib,
+  and the policy engine (phase 5) plugs in as ordinary middleware. The relay
+  therefore terminates HTTP and speaks HTTP/1.1 (`Connection: close`, one stream
+  per request) to the agent. PROTOCOL.md updated to match. Alternative (raw
+  hijack) deferred; revisit only if per-request stream overhead matters.
+- 2026-11-09 — Agent tokens are `lt_<id>_<secret>` where both parts use a
+  base32 lowercase alphabet (no `_`/`-`/padding). A base64url encoding (default
+  choice) silently broke `split()` because `_` is in its alphabet and also the
+  field delimiter — a ~1-in-5 flaky auth failure. Regression test:
+  `TestTokenEncodingHasNoDelimiter`.
+- 2026-11-09 — yamux `StreamOpenTimeout` is disabled (0): it closes the whole
+  session when any stream stays pending. Latch bounds each `OpenStream` with its
+  own deadline and uses control-stream Ping/Pong (15s/45s) for liveness.
+- 2026-11-09 — Relay has no network admin API; TLS in phase 2 is a static cert
+  (`--tls-cert/--tls-key`) or a dev CA (`--dev`). Automatic ACME is phase 4.
+- 2026-11-09 — "Same token, same agentId" supersedes the older session
+  (`Goodbye{superseded}`); up to 4 sessions per token otherwise. A revoked or
+  expired token is noticed by a 30s store poll (`watchRevocations`) as well as
+  immediately on `RevokeToken`, because the CLI revokes in a separate process.
+
 - 2026-11-09 — Store keeps the **full snapshot JSON per version** (not deltas) and
   prunes to 200 versions by default (`store.Options.MaxVersions`). Config is small;
   simplicity and trivial rollback win.

@@ -185,7 +185,7 @@ func (v *validator) route(p string, r *Route, s *Snapshot, policies, rates, rela
 		seen := map[string]bool{}
 		for i, h := range r.Hostnames {
 			hp := fmt.Sprintf("%s.hostnames[%d]", p, i)
-			if err := validateHostname(h); err != nil {
+			if err := ValidateHostname(h); err != nil {
 				v.add(hp, CodeInvalidHost, "%v", err)
 			}
 			if seen[h] {
@@ -425,7 +425,7 @@ func (v *validator) relay(p string, r *Relay, ids map[string]int) {
 	v.name(p+".name", r.Name)
 	if r.Host == "" {
 		v.add(p+".host", CodeRequired, "host is required")
-	} else if err := validateHostname(r.Host); err != nil {
+	} else if err := ValidateHostname(r.Host); err != nil {
 		if _, ipErr := netip.ParseAddr(r.Host); ipErr != nil {
 			v.add(p+".host", CodeInvalidHost, "%v", err)
 		}
@@ -440,7 +440,7 @@ func (v *validator) relay(p string, r *Relay, ids map[string]int) {
 		v.add(p+".caPem", CodeInvalid, "must be a PEM certificate")
 	}
 	if r.BaseDomain != "" {
-		if err := validateHostname(r.BaseDomain); err != nil {
+		if err := ValidateHostname(r.BaseDomain); err != nil {
 			v.add(p+".baseDomain", CodeInvalidHost, "%v", err)
 		}
 	}
@@ -542,9 +542,9 @@ func isAlpha(s string) bool {
 
 var labelRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
-// validateHostname accepts lowercase FQDNs (at least two labels), no
+// ValidateHostname accepts lowercase FQDNs (at least two labels), no
 // wildcards, no IP literals.
-func validateHostname(h string) error {
+func ValidateHostname(h string) error {
 	if h == "" {
 		return fmt.Errorf("hostname is empty")
 	}
