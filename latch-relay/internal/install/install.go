@@ -82,6 +82,11 @@ type SystemdOptions struct {
 
 // RenderSystemdUnit renders a hardened systemd service. The service binds low
 // ports via CAP_NET_BIND_SERVICE instead of running as root.
+// DefaultServiceUser is the dedicated system account the systemd unit runs as.
+// The installer creates it (see provisionServiceUser) and gives it the data
+// directory; the unit grants it CAP_NET_BIND_SERVICE for ports 80/443/7443.
+const DefaultServiceUser = "latch-relay"
+
 func RenderSystemdUnit(o SystemdOptions) string {
 	if o.BinPath == "" {
 		o.BinPath = "/usr/local/bin/latch-relay"
@@ -90,7 +95,7 @@ func RenderSystemdUnit(o SystemdOptions) string {
 		o.ConfigPath = config.DefaultPath
 	}
 	if o.User == "" {
-		o.User = "latch-relay"
+		o.User = DefaultServiceUser
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "[Unit]\n")

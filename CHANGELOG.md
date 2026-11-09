@@ -3,6 +3,18 @@
 All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- `latch-relay install` now creates the dedicated `latch-relay` system user and
+  gives it the data directory. The generated systemd unit runs as that user, but
+  the wizard previously never created it, so `systemctl start latch-relay` failed
+  on a fresh host with `status=217/USER` ("Unknown user"). The step is
+  best-effort (Linux + root) and prints the manual `useradd`/`chown` commands if
+  it cannot run. `DefaultServiceUser` is now the single source for the account
+  name shared by the unit template and the installer.
+
 ## [1.0.0] - 2026-11-09
 
 First stable release. The self-hosted product (reverse proxy + self-hosted

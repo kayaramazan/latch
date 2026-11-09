@@ -7,7 +7,11 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
+	"os/user"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -126,6 +130,12 @@ func cmdInstall(args []string) error {
 	if err != nil {
 		return fmt.Errorf("create first token: %w", err)
 	}
+
+	// The systemd unit runs as a dedicated system user; create it and hand it
+	// the data directory so the service can actually start (status=217/USER
+	// otherwise). Best-effort: a failure prints manual steps, not an abort.
+	provisionServiceUser(install.DefaultServiceUser, *dataDir)
+
 	fmt.Println("\nSetup complete. Next steps:")
 	fmt.Println("  sudo systemctl daemon-reload")
 	fmt.Println("  sudo systemctl enable --now latch-relay")
@@ -133,6 +143,42 @@ func cmdInstall(args []string) error {
 	fmt.Println("\nPaste this into an agent (shown once):")
 	fmt.Println(" ", conn)
 	return nil
+}
+
+// provisionServiceUser creates the system account the systemd unit runs as (if
+// it does not already exist) and gives it ownership of the data directory, so
+// `systemctl start` does not fail with status=217/USER. It is best-effort: it
+// only acts on Linux as root, and on any failure it prints the manual commands
+// instead of aborting the install.
+func provisionServiceUser(name, dataDir string) {
+	if runtime.GOOS != "linux" || os.Geteuid() != 0 || name == "" || name == "root" {
+		return
+	}
+	if _, err := user.Lookup(name); err != nil {
+		cmd := exec.Command("useradd", "--system", "--home-dir", dataDir, "--shell", "/usr/sbin/nologin", name)
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("warning: could not create system user %q (%v).\n", name, err)
+			fmt.Printf("         create it manually, then restart the service:\n")
+			fmt.Printf("           sudo useradd --system --home-dir %s --shell /usr/sbin/nologin %s\n", dataDir, name)
+			fmt.Printf("           sudo chown -R %s:%s %s\n", name, name, dataDir)
+			return
+		}
+		fmt.Printf("Created system user %s\n", name)
+	}
+	u, err := user.Lookup(name)
+	if err != nil {
+		return
+	}
+	uid, _ := strconv.Atoi(u.Uid)
+	gid, _ := strconv.Atoi(u.Gid)
+	_ = filepath.Walk(dataDir, func(p string, _ os.FileInfo, err error) error {
+		if err == nil {
+			_ = os.Chown(p, uid, gid)
+		}
+		return nil
+	})
+	fmt.Printf("Gave %s ownership of %s\n", name, dataDir)
 }
 
 func createFirstToken(dataDir string, a install.Answers) (string, error) {
