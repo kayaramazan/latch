@@ -1,0 +1,25 @@
+# Tunnel scenario: a self-hosted relay on your VPS + an agent that exposes a
+# local service through it. Run the relay on the public server, the agent where
+# your service lives.
+#
+# The agent's management API stays on loopback by default; to reach the web UI
+# from outside the container, set a password first:
+#   docker compose run --rm agent auth set-password
+# then add `command: run --listen 0.0.0.0:4040` and publish the port.
+services:
+  relay:
+    image: ghcr.io/kayaramazan/latch-relay:latest
+    # On a real VPS, mount a config written by `latch-relay install`:
+    #   volumes: [./relay-data:/var/lib/latch-relay, /etc/latch-relay:/etc/latch-relay]
+    command: run --config /etc/latch-relay/config.yaml
+    ports: ["443:443", "80:80", "7443:7443"]
+    restart: unless-stopped
+
+  agent:
+    image: ghcr.io/kayaramazan/latchd:latest
+    command: run
+    volumes: ["./agent-data:/var/lib/latchd"]
+    restart: unless-stopped
+    # Register a relay + route once (or via the UI after setting a password):
+    #   docker compose exec agent latchd relay add --url 'latch://relay.example.com:7443/?token=...'
+    #   docker compose exec agent latchd route add --target host.docker.internal:3000 --tunnel <relay> --hostname app.relay.example.com

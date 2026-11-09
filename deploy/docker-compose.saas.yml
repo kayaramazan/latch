@@ -1,0 +1,33 @@
+# Managed-SaaS control plane + a relay in the fleet. The control plane drives the
+# relay's mTLS control API; generate the certs first:
+#   docker compose run --rm control gen-certs --dir /certs --relay-hosts relay.eu.example.com
+services:
+  control:
+    image: ghcr.io/kayaramazan/latch-control:latest
+    command: >
+      serve --listen 0.0.0.0:9000 --reg-token ${REG_TOKEN}
+      --ops-token ${OPS_TOKEN} --webhook-secret ${WEBHOOK_SECRET}
+      --client-cert /certs/control-plane.crt --client-key /certs/control-plane.key --relay-ca /certs/ca.crt
+      --db ${CONTROL_DB}
+    volumes: ["./certs:/certs"]
+    ports: ["9000:9000"]
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: latchcontrol
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+    volumes: ["./pgdata:/var/lib/postgresql/data"]
+    restart: unless-stopped
+
+  relay:
+    image: ghcr.io/kayaramazan/latch-relay:latest
+    command: >
+      run --config /etc/latch-relay/config.yaml
+      --control --control-addr 0.0.0.0:7444
+      --control-cert /certs/relay-control.crt --control-key /certs/relay-control.key --control-client-ca /certs/ca.crt
+      --relay-id relay-eu-1 --region eu --control-plane-url http://control:9000 --control-reg-token ${REG_TOKEN}
+    volumes: ["./certs:/certs", "/etc/latch-relay:/etc/latch-relay"]
+    ports: ["443:443", "80:80", "7443:7443"]
+    restart: unless-stopped

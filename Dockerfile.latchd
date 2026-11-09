@@ -1,0 +1,12 @@
+# Build the agent (latchd) — embeds the UI via go:embed.
+FROM golang:1.26 AS build
+WORKDIR /src
+COPY . .
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -ldflags "-s -w -X main.Version=${VERSION}" -o /out/latchd ./latchd
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/latchd /usr/local/bin/latchd
+EXPOSE 4040
+ENTRYPOINT ["/usr/local/bin/latchd"]
+CMD ["run"]

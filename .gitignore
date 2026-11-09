@@ -25,3 +25,4 @@ electron/out/
 .DS_Store
 .idea/
 .vscode/
+/dist/

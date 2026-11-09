@@ -43,5 +43,16 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: latch-ui/pnpm-lock.yaml
-      - run: cd latch-ui && pnpm install --frozen-lockfile && pnpm build && pnpm test
+      - run: cd latch-ui && pnpm install --frozen-lockfile && pnpm check-i18n && pnpm build && pnpm test
         if: steps.ui.outputs.present == 'true'
+
+  acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Acceptance scenarios
+        run: sh deploy/acceptance/run.sh

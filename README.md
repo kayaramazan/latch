@@ -25,8 +25,54 @@ minutes.
 
 ## Status
 
-Pre-alpha. The project is being built phase by phase; see
-[ROADMAP.md](ROADMAP.md) (Turkish) and [CHANGELOG.md](CHANGELOG.md).
+**v1.0.0.** The self-hosted product (tunnel + local mode, policies,
+observability, authenticated API, web UI) is complete and hardened; a
+managed-relay SaaS control plane (`latch-control`) is also included. See
+[CHANGELOG.md](CHANGELOG.md), [ROADMAP.md](ROADMAP.md) (Turkish) and
+[docs/ACCEPTANCE.md](docs/ACCEPTANCE.md).
+
+## Quick start
+
+### Scenario A — share a local port over a tunnel
+
+On a server with a public IP, install the relay and follow the wizard (domain,
+email, DNS). It prints a `latch://…` connection string:
+
+```sh
+curl -sSL https://github.com/kayaramazan/latch/releases/latest/download/install.sh | sh
+# → paste the connection string below
+```
+
+On the machine with the service you want to expose:
+
+```sh
+# install the agent (or: docker run ghcr.io/kayaramazan/latchd:latest)
+latchd relay add --url 'latch://relay.example.com:7443/?token=…'
+latchd route add --target 127.0.0.1:3000 --tunnel <relay> --hostname app.relay.example.com
+# → https://app.relay.example.com is live with valid HTTPS
+```
+
+Open `http://127.0.0.1:4040` for the web UI (set a password with
+`latchd auth set-password` to reach it from elsewhere).
+
+### Scenario B — local reverse proxy on a public-IP server
+
+Run the agent on the server itself and let it get certificates automatically:
+
+```sh
+latchd route add --local --hostname site.example.com --target 127.0.0.1:8080
+# → https://site.example.com is served by the embedded Caddy
+```
+
+Both scenarios are the same binary, managed from the same UI. Run everything in
+containers with `deploy/docker-compose.tunnel.yml`.
+
+### Run it as a service
+
+```sh
+sudo latchd install     # systemd (Linux) or launchd (macOS)
+latchd upgrade          # fetch and install the latest release
+```
 
 ## Documentation
 
@@ -43,10 +89,16 @@ Pre-alpha. The project is being built phase by phase; see
 Requirements: Go 1.24+, Node 22 + pnpm 9 (UI, from phase 9).
 
 ```sh
-make build   # bin/latchd, bin/latch-relay
-make test
-make lint    # needs golangci-lint
+make build        # bin/latchd, bin/latch-relay, bin/latch-control
+make test         # unit + race
+make test-ui      # UI component tests + i18n completeness
+sh deploy/acceptance/run.sh   # the three SPEC acceptance scenarios
+make lint         # needs golangci-lint
 ```
+
+More: [docs/DEV.md](docs/DEV.md) (walkthroughs), [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md),
+[docs/SECURITY_CHECKLIST.md](docs/SECURITY_CHECKLIST.md), [docs/COMPAT.md](docs/COMPAT.md),
+[docs/openapi.yaml](docs/openapi.yaml).
 
 ## License
 

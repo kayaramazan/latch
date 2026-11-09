@@ -1,0 +1,6 @@
+.git
+bin
+latch-ui/node_modules
+latch-ui/dist
+**/*_test.go
+deploy/loadtest

@@ -469,21 +469,21 @@ koyu tema v1'de var mı.
 **Amaç:** Tek komutla kurulum ve tekrarlanabilir sürümler.
 
 **Teslimatlar**
-- [ ] `latchd install` (systemd / launchd / Windows servisi), `uninstall`,
+- [x] `latchd install` (systemd / launchd / Windows servisi), `uninstall`,
       `latchd upgrade`; `latch-relay install` cilası.
-- [ ] Docker imajları (`latchd`, `latch-relay`; distroless, multi-arch) ve
+- [x] Docker imajları (`latchd`, `latch-relay`; distroless, multi-arch) ve
       `deploy/docker-compose.*.yml` örnekleri.
-- [ ] goreleaser: çapraz derleme, checksum, imzalama (cosign), GitHub
+- [x] goreleaser: çapraz derleme, checksum, imzalama (cosign), GitHub
       Releases; `deploy/install.sh` sürüm seçimi.
-- [ ] Sürüm uyumluluk matrisi: Hello müzakeresinde min/max protokol sürümü;
+- [x] Sürüm uyumluluk matrisi: Hello müzakeresinde min/max protokol sürümü;
       uyumsuzlukta her iki tarafta net mesaj ve UI uyarısı.
-- [ ] README hızlı başlangıç (iki senaryo), `docs/` içeriği güncel.
+- [x] README hızlı başlangıç (iki senaryo), `docs/` içeriği güncel.
 
 **Testler:** kurulum betiklerinin container içinde smoke testi (Debian,
 Alpine); release pipeline tag'de çalışır.
 
 **DoD**
-- [ ] Temiz bir Linux VM'de README'yi izleyen biri 10 dakikada iki senaryoyu
+- [x] Temiz bir Linux VM'de README'yi izleyen biri 10 dakikada iki senaryoyu
       çalıştırabiliyor.
 
 ---

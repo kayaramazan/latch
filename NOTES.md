@@ -383,6 +383,19 @@ Decisions, assumptions and backlog. Newest first within each section.
   sign-off and a third-party pentest are the launch-day steps before onboarding
   paying users (the standing red line).
 
+- 2026-11-09 — (Faz 11) Packaging & distribution. `latchd install/uninstall/
+  upgrade` (`internal/service`: systemd on Linux, launchd on macOS; upgrade
+  downloads a release binary and restarts). Distroless multi-stage Dockerfiles
+  for latchd/latch-relay/latch-control (CGO off, built latchd image 86 MB,
+  `latchd version` OK in-container); the agent image defaults to the loopback API
+  (exposing it needs a password — the phase-8 rule holds). `deploy/docker-compose.
+  tunnel.yml` + `.saas.yml`. `.goreleaser.yaml` (cross-compile linux/darwin/
+  windows × amd64/arm64, checksums, keyless cosign; `goreleaser build` validated
+  locally) + `.github/workflows/release.yml` (goreleaser + multi-arch ghcr images
+  on tag). CI gained an acceptance job + the i18n check. docs/COMPAT.md documents
+  protocol negotiation (v1, clear mismatch message + UI warning, already in code).
+  README quick start covers both scenarios.
+
 ## Backlog
 
 - latch-ui code-splitting (Recharts) to shrink the main bundle. Faz 9 deferred.

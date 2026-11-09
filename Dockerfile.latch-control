@@ -1,0 +1,12 @@
+# Build the SaaS control plane.
+FROM golang:1.26 AS build
+WORKDIR /src
+COPY . .
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -ldflags "-s -w -X main.Version=${VERSION}" -o /out/latch-control ./latch-control
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/latch-control /usr/local/bin/latch-control
+EXPOSE 9000
+ENTRYPOINT ["/usr/local/bin/latch-control"]
+CMD ["serve", "--listen", "0.0.0.0:9000"]

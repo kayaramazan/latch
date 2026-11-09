@@ -37,6 +37,12 @@ func main() {
 	switch cmd {
 	case "run":
 		err = run(args)
+	case "install":
+		err = cli.Install(args)
+	case "uninstall":
+		err = cli.Uninstall(args)
+	case "upgrade":
+		err = cli.Upgrade(args)
 	case "relay":
 		err = cli.Relay(args)
 	case "route":
@@ -71,6 +77,7 @@ func usage() {
 
 Usage:
   latchd run [--data-dir DIR] [--listen HOST:PORT]
+  latchd install | uninstall | upgrade
   latchd relay add --url latch://host:port/?token=... [--name NAME] [--ca-file FILE]
   latchd relay list
   latchd relay rm <relay-id|name>

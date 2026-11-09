@@ -635,3 +635,17 @@ Run everything: `make test` (unit + race), `make test-ui` (component + i18n),
 `sh deploy/acceptance/run.sh` (acceptance). `make test-acme` and
 `LATCH_CONTROL_DB=… go test ./latch-control/internal/store/` are the gated
 integration tests (Pebble, PostgreSQL).
+
+## Phase 11 — packaging & distribution
+
+```sh
+sudo latchd install            # systemd (Linux) / launchd (macOS); also uninstall, upgrade
+docker build -f Dockerfile.latchd -t latchd .   # distroless; also latch-relay, latch-control
+docker compose -f deploy/docker-compose.tunnel.yml up   # relay + agent
+```
+
+Releases are cut by goreleaser on a tag (`.goreleaser.yaml` →
+`.github/workflows/release.yml`): cross-compiled binaries (linux/darwin/windows ×
+amd64/arm64), a cosign-signed `checksums.txt`, and multi-arch container images on
+`ghcr.io`. `deploy/install.sh --version vX.Y.Z` installs a specific release.
+Protocol/version compatibility is documented in `docs/COMPAT.md`.

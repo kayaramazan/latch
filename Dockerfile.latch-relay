@@ -1,0 +1,12 @@
+# Build the relay.
+FROM golang:1.26 AS build
+WORKDIR /src
+COPY . .
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -ldflags "-s -w -X main.Version=${VERSION}" -o /out/latch-relay ./latch-relay
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /out/latch-relay /usr/local/bin/latch-relay
+EXPOSE 443 80 7443
+ENTRYPOINT ["/usr/local/bin/latch-relay"]
+CMD ["run"]

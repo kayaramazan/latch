@@ -1,0 +1,67 @@
+# goreleaser v2 — cross-compiled, checksummed, cosign-signed releases.
+# Runs in CI on a tag. The committed latchd/internal/web/dist is embedded, so no
+# Node toolchain is needed at release time.
+version: 2
+
+project_name: latch
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: latchd
+    main: ./latchd
+    binary: latchd
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags: ["-s -w -X main.Version={{.Version}}"]
+  - id: latch-relay
+    main: ./latch-relay
+    binary: latch-relay
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ldflags: ["-s -w -X main.Version={{.Version}}"]
+  - id: latch-control
+    main: ./latch-control
+    binary: latch-control
+    env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    ldflags: ["-s -w -X main.Version={{.Version}}"]
+
+archives:
+  - id: default
+    ids: [latchd, latch-relay, latch-control]
+    name_template: "{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: "checksums.txt"
+
+# Keyless cosign signing of the checksum file (CI provides the OIDC token).
+signs:
+  - cmd: cosign
+    args:
+      - "sign-blob"
+      - "--yes"
+      - "--output-signature=${signature}"
+      - "--output-certificate=${certificate}"
+      - "${artifact}"
+    artifacts: checksum
+    output: true
+
+release:
+  github:
+    owner: kayaramazan
+    name: latch
+  draft: false
+  prerelease: auto
+
+changelog:
+  use: github
+  sort: asc
