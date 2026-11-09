@@ -107,6 +107,39 @@ Decisions, assumptions and backlog. Newest first within each section.
   to override); only `run` touches the store directly. Keeps one source of truth
   (the daemon) and makes the CLI usable while the UI does not exist yet.
 
+- 2026-11-09 — (Faz 4) certmagic is the certificate provider. Two ACME issuers
+  share one config: issuer 1 solves the base-domain wildcard via DNS-01, issuer 2
+  solves custom domains via TLS-ALPN-01 on :443 (no access to the customer's DNS).
+  certmagic tries them in order, so a custom domain's failed DNS-01 attempt falls
+  through to TLS-ALPN. HTTP-01 is disabled (the relay needs no :80 for ACME).
+- 2026-11-09 — (Faz 4) First DNS-01 provider is Cloudflare (libdns) plus a
+  "manual TXT" mode (wizard/daemon shows the record and waits). Route53/DO/Hetzner
+  deferred to keep dependencies small. User decision.
+- 2026-11-09 — (Faz 4) Wizard default ACME environment is Let's Encrypt
+  production, with a `--staging` option. User decision.
+- 2026-11-09 — (Faz 4) Custom-domain abuse guard: the OnDemand DecisionFunc
+  issues a certificate only for (a) names under the base domain (covered by the
+  wildcard) or (b) a custom domain that the operator registered AND whose DNS is
+  a CNAME to the relay's public host or an A record to its public IP. Unregistered
+  or mis-pointed names are denied, so an attacker cannot drive the relay into ACME
+  rate limits. Registration lives in a new relay-store `custom_domains` table;
+  `IsRegistered` reads it live so CLI changes are seen without a restart.
+- 2026-11-09 — (Faz 4) Relay gains an optional YAML config at
+  `/etc/latch-relay/config.yaml` (written by `latch-relay install`); `run` reads
+  it and CLI flags override. Secrets (Cloudflare token) may instead come from
+  `$CLOUDFLARE_API_TOKEN`. The file is 0600.
+- 2026-11-09 — (Faz 4) `install` wizard writes config + a hardened systemd unit
+  (non-root user, `CAP_NET_BIND_SERVICE` for :80/:443, NoNewPrivileges,
+  ProtectSystem=strict) and mints a first token. `deploy/install.sh` downloads the
+  binary and runs the wizard. The agent already verifies :7443 against system
+  roots (dev CA only when explicitly given), so that Faz 4 deliverable was met in
+  Faz 3.
+- 2026-11-09 — (Faz 4) The real-VPS DoD (end-to-end ACME issuance, custom-domain
+  CNAME) is validated in CI via Pebble (`make test-acme`, build tag `acme_pebble`)
+  and on deployment, not in this dev environment. Logic that does not need the
+  network (permission function, DNS/clock/port checks, wizard rendering, config
+  round-trip) is unit-tested here.
+
 ## Backlog
 
 - gRPC / h2c end-to-end through the tunnel (needs HTTP/2 to the agent). v1+.

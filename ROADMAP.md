@@ -226,22 +226,22 @@ hostname'in duyurulması yasak (öneri) mı?
 sertifikalarla çalışması.
 
 **Teslimatlar**
-- [ ] certmagic entegrasyonu: wildcard DNS-01 (libdns: Cloudflare, Route53,
+- [x] certmagic entegrasyonu: wildcard DNS-01 (libdns: Cloudflare, Route53,
       Hetzner, DigitalOcean) ve "manuel TXT" modu (sihirbaz TXT kaydını
       gösterip bekler); alternatif mod: alt alan başına TLS-ALPN-01 on-demand.
-- [ ] Özel alan adı: on-demand ACME, "izin" fonksiyonu yalnızca kayıtlı ve
+- [x] Özel alan adı: on-demand ACME, "izin" fonksiyonu yalnızca kayıtlı ve
       CNAME/A kaydı relay'e dönen hostname'lere sertifika alır (ACME kota
       ve kötüye kullanım koruması); doğrulama sonucu ajana bildirilir.
-- [ ] Ajan tarafı: 7443 için sertifika doğrulaması sistem kökleriyle; dev CA
+- [x] Ajan tarafı: 7443 için sertifika doğrulaması sistem kökleriyle; dev CA
       yalnızca açıkça verilirse.
-- [ ] `latch-relay install`: etkileşimli sihirbaz (alan adı, e-posta, DNS
+- [x] `latch-relay install`: etkileşimli sihirbaz (alan adı, e-posta, DNS
       sağlayıcı + API anahtarı veya manuel), wildcard DNS'in bu sunucunun
       IP'sine çözüldüğünü kontrol, config yazma (`/etc/latch-relay/`), systemd
       unit, ilk token üretimi ve "ajana yapıştırılacak" bağlantı dizesi
       (`latch://host:7443?token=...` biçimi PROTOCOL.md'de).
-- [ ] `latch-relay status`, `latch-relay doctor` (port, DNS, sertifika,
+- [x] `latch-relay status`, `latch-relay doctor` (port, DNS, sertifika,
       saat kontrolü).
-- [ ] `deploy/install.sh`: tek satır kurulum betiği (binary indir, `install`
+- [x] `deploy/install.sh`: tek satır kurulum betiği (binary indir, `install`
       çalıştır); Faz 9'daki "Relay'ini kur" sihirbazı bunu üretir.
 
 **Testler:** izin fonksiyonu birim testleri (kayıtlı/kayıtsız/CNAME yanlış);
@@ -253,8 +253,13 @@ ile opsiyonel entegrasyon (CI'da ayrı iş).
       wildcard sertifika; `https://x.relay.<alan>` ajan yokken 503 sayfası.
 - [ ] Özel alan adı CNAME ile çalışıyor.
 
-**Karar noktaları:** Let's Encrypt staging anahtarı sihirbazda seçenek;
-desteklenecek ilk DNS sağlayıcı listesi doğrulanır.
+> DoD iki maddesi gerçek bir VPS + gerçek ACME gerektirdiği için bu ortamda
+> doğrulanamadı; teslimatlar tamamlandı ve yerel olarak test edildi (izin
+> fonksiyonu, DNS/doctor, sihirbaz birim testli; Pebble entegrasyonu
+> `make test-acme` ile CI işi). VPS doğrulaması dağıtımda yapılacak.
+
+**Karar noktaları (çözüldü):** DNS sağlayıcı ilk sürümde Cloudflare + manuel
+TXT; sihirbaz varsayılanı Let's Encrypt production, `--staging` seçeneği var.
 
 ---
 

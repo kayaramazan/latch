@@ -5,6 +5,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Phase 4: relay TLS/ACME, setup wizard, custom domains. certmagic integration
+  (`latch-relay/internal/acme`): a wildcard certificate for the base domain via
+  ACME DNS-01 (Cloudflare or a manual-TXT mode) and on-demand certificates for
+  registered custom domains via TLS-ALPN-01. Abuse-guarding permission function —
+  a custom domain gets a certificate only when the operator registered it and its
+  DNS points at the relay (CNAME to the public host or A record to the public IP);
+  unit-tested for registered/unregistered/wrong-DNS cases. New relay-store
+  `custom_domains` table and `latch-relay domain add/list/rm/verify`. Relay YAML
+  config (`/etc/latch-relay/config.yaml`, read by `run`, flags override).
+  `latch-relay install` wizard (config + hardened systemd unit + first token +
+  connection string, with a DNS precheck), `latch-relay status`, and
+  `latch-relay doctor` (DNS, ports, clock). `deploy/install.sh` one-line installer.
+  `make test-acme` runs a Pebble integration test behind the `acme_pebble` build
+  tag (CI-only). Agent-side :7443 verification already uses system roots (dev CA
+  only when explicitly provided). See docs/DEV.md.
 - Phase 3: agent tunnel client — first end-to-end. `latchd/internal/tunnel`:
   a client per configured relay that dials over verifying TLS (system roots plus
   the relay's optional dev CA; verification is never skipped), performs the

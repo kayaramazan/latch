@@ -48,10 +48,14 @@ type Config struct {
 	TCPBindHost  string
 	TCPPortRange [2]int // default 20000-20999
 
-	Certs   CertProvider
-	Version string
-	Logger  *slog.Logger
-	OnEvent func(model.AccessEvent)
+	Certs CertProvider
+	// ACMEALPNChallenge adds the "acme-tls/1" ALPN to the HTTPS listener so the
+	// certificate provider (certmagic) can answer TLS-ALPN-01 challenges for
+	// on-demand custom domains.
+	ACMEALPNChallenge bool
+	Version           string
+	Logger            *slog.Logger
+	OnEvent           func(model.AccessEvent)
 	// RevocationCheck is how often live sessions are re-checked against the
 	// store (token revoked/expired by the CLI). Default 30s.
 	RevocationCheck time.Duration
@@ -78,9 +82,6 @@ func (c *Config) defaults() error {
 	}
 	if c.TCPPortRange[0] < 1 || c.TCPPortRange[1] > 65535 || c.TCPPortRange[0] > c.TCPPortRange[1] {
 		return fmt.Errorf("relay: invalid tcp port range %d-%d", c.TCPPortRange[0], c.TCPPortRange[1])
-	}
-	if c.Certs == nil {
-		return errors.New("relay: Certs is required")
 	}
 	if c.Version == "" {
 		c.Version = "dev"
@@ -175,15 +176,31 @@ func (r *Relay) Addrs() (https, httpAddr, agent net.Addr) {
 
 // Start binds the listeners and serves until Stop. It returns after the
 // listeners are bound.
+// SetCertProvider sets the TLS certificate source and whether the HTTPS
+// listener must offer the ACME TLS-ALPN challenge protocol. It must be called
+// before Start. This lets the caller build a certificate manager that depends
+// on the relay's store (which New creates), then wire it back in.
+func (r *Relay) SetCertProvider(c CertProvider, acmeALPN bool) {
+	r.cfg.Certs = c
+	r.cfg.ACMEALPNChallenge = acmeALPN
+}
+
 func (r *Relay) Start(ctx context.Context) error {
+	if r.cfg.Certs == nil {
+		return errors.New("relay: no certificate provider configured (use --dev, --tls-cert/--tls-key, or ACME)")
+	}
 	ctx, r.cancel = context.WithCancel(ctx)
 	if err := r.registry.Load(ctx); err != nil {
 		return fmt.Errorf("relay: load routes: %w", err)
 	}
 
+	httpsNextProtos := []string{"h2", "http/1.1"}
+	if r.cfg.ACMEALPNChallenge {
+		httpsNextProtos = append(httpsNextProtos, "acme-tls/1")
+	}
 	httpsTLS := &tls.Config{
 		MinVersion:     tls.VersionTLS12,
-		NextProtos:     []string{"h2", "http/1.1"},
+		NextProtos:     httpsNextProtos,
 		GetCertificate: r.cfg.Certs,
 	}
 	ln, err := net.Listen("tcp", r.cfg.HTTPSAddr)

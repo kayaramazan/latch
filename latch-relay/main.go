@@ -18,7 +18,9 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/kayaramazan/latch/latch-relay/internal/acme"
 	"github.com/kayaramazan/latch/latch-relay/internal/auth"
+	relaycfg "github.com/kayaramazan/latch/latch-relay/internal/config"
 	"github.com/kayaramazan/latch/latch-relay/internal/devca"
 	"github.com/kayaramazan/latch/latch-relay/internal/relay"
 	"github.com/kayaramazan/latch/latch-relay/internal/store"
@@ -31,10 +33,17 @@ var Version = "dev"
 const usage = `latch-relay — self-hosted tunnel relay
 
 Usage:
+  latch-relay install [flags]        interactive setup wizard (config, systemd, first token)
   latch-relay run [flags]            start the relay
+  latch-relay status [flags]         show config, listeners and registered domains
+  latch-relay doctor [flags]         check DNS, ports, certificate and clock
   latch-relay token create [flags]   issue an agent token (prints a latch:// connection string)
   latch-relay token list
   latch-relay token revoke <id>
+  latch-relay domain add <name> [flags]  register a custom domain for on-demand TLS
+  latch-relay domain list
+  latch-relay domain rm <name>
+  latch-relay domain verify <name>
   latch-relay dev-ca init [flags]    create a development CA and server certificate
   latch-relay version
 
@@ -48,10 +57,18 @@ func main() {
 	}
 	var err error
 	switch os.Args[1] {
+	case "install":
+		err = cmdInstall(os.Args[2:])
 	case "run":
 		err = cmdRun(os.Args[2:])
+	case "status":
+		err = cmdStatus(os.Args[2:])
+	case "doctor":
+		err = cmdDoctor(os.Args[2:])
 	case "token":
 		err = cmdToken(os.Args[2:])
+	case "domain":
+		err = cmdDomain(os.Args[2:])
 	case "dev-ca":
 		err = cmdDevCA(os.Args[2:])
 	case "version":
@@ -112,15 +129,22 @@ func parsePortRange(s string) ([2]int, error) {
 
 func cmdRun(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
+	configPath := fs.String("config", "", "path to a config file (e.g. "+relaycfg.DefaultPath+"); flags override it")
 	dataDir := fs.String("data-dir", defaultDataDir(), "data directory (also $LATCH_RELAY_DATA_DIR)")
 	publicHost := fs.String("public-host", "", "this relay's hostname, e.g. relay.example.com (required)")
 	baseDomain := fs.String("base-domain", "", "wildcard zone for generated subdomains (default: public-host)")
+	publicIP := fs.String("public-ip", "", "this relay's public IP (used to verify custom-domain A records)")
 	httpsAddr := fs.String("https-addr", ":443", "public HTTPS listen address")
 	httpAddr := fs.String("http-addr", ":80", "HTTP redirect listen address (empty to disable)")
 	agentAddr := fs.String("agent-addr", ":7443", "agent tunnel listen address")
 	tlsCert := fs.String("tls-cert", "", "PEM certificate for the public and agent listeners")
 	tlsKey := fs.String("tls-key", "", "PEM private key")
 	dev := fs.Bool("dev", false, "use a development CA from <data-dir>/devca (created if missing)")
+	acmeOn := fs.Bool("acme", false, "obtain certificates automatically via Let's Encrypt")
+	acmeEmail := fs.String("acme-email", "", "contact email for Let's Encrypt")
+	acmeDNS := fs.String("acme-dns", "manual", "DNS-01 provider for the wildcard: cloudflare|manual")
+	cfToken := fs.String("cloudflare-token", "", "Cloudflare API token (or $"+relaycfg.CloudflareTokenEnv+")")
+	acmeStaging := fs.Bool("acme-staging", false, "use the Let's Encrypt staging environment")
 	tcpPorts := fs.String("tcp-ports", "20000-20999", "port pool for TCP tunnels")
 	tcpBind := fs.String("tcp-bind", "", "bind host for TCP tunnel ports (default: all interfaces)")
 	logLevel := fs.String("log-level", "info", "debug|info|warn|error")
@@ -128,8 +152,46 @@ func cmdRun(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+
+	// A config file supplies defaults; explicit flags win.
+	var cfg *relaycfg.Config
+	if *configPath != "" {
+		c, err := relaycfg.Load(*configPath)
+		if err != nil {
+			return err
+		}
+		cfg = c
+		apply := func(name string, dst *string, val string) {
+			if !set[name] && val != "" {
+				*dst = val
+			}
+		}
+		apply("data-dir", dataDir, cfg.DataDir)
+		apply("public-host", publicHost, cfg.PublicHost)
+		apply("base-domain", baseDomain, cfg.BaseDomain)
+		apply("public-ip", publicIP, cfg.PublicIP)
+		apply("https-addr", httpsAddr, cfg.HTTPSAddr)
+		apply("http-addr", httpAddr, cfg.HTTPAddr)
+		apply("agent-addr", agentAddr, cfg.AgentAddr)
+		apply("tcp-ports", tcpPorts, cfg.TCPPorts)
+		apply("tcp-bind", tcpBind, cfg.TCPBind)
+		apply("log-level", logLevel, cfg.LogLevel)
+		apply("log-format", logFormat, cfg.LogFormat)
+		if cfg.ACME.Enabled && !set["acme"] {
+			*acmeOn = true
+		}
+		apply("acme-email", acmeEmail, cfg.ACME.Email)
+		apply("acme-dns", acmeDNS, cfg.ACME.DNSProvider)
+		apply("cloudflare-token", cfToken, cfg.ACME.CloudflareToken)
+		if cfg.ACME.Staging && !set["acme-staging"] {
+			*acmeStaging = true
+		}
+	}
+
 	if *publicHost == "" {
-		return errors.New("--public-host is required")
+		return errors.New("--public-host is required (or set public_host in --config)")
 	}
 	log, err := newLogger(*logLevel, *logFormat)
 	if err != nil {
@@ -143,7 +205,16 @@ func cmdRun(args []string) error {
 		*baseDomain = *publicHost
 	}
 
-	var certs relay.CertProvider
+	r, err := relay.New(relay.Config{
+		DataDir: *dataDir, PublicHost: *publicHost, BaseDomain: *baseDomain,
+		HTTPSAddr: *httpsAddr, HTTPAddr: *httpAddr, AgentAddr: *agentAddr,
+		TCPBindHost: *tcpBind, TCPPortRange: pr, Version: Version, Logger: log,
+	})
+	if err != nil {
+		return err
+	}
+
+	var acmeMgr *acme.Manager
 	switch {
 	case *dev:
 		dir := filepath.Join(*dataDir, "devca")
@@ -155,36 +226,65 @@ func cmdRun(args []string) error {
 		if err != nil {
 			return err
 		}
-		certs = relay.StaticCert(cert)
+		r.SetCertProvider(relay.StaticCert(cert), false)
 		log.Warn("development certificates in use; agents must trust the CA", "ca", files.CACert)
 	case *tlsCert != "" && *tlsKey != "":
 		cert, err := loadKeyPair(*tlsCert, *tlsKey)
 		if err != nil {
 			return err
 		}
-		certs = relay.StaticCert(cert)
+		r.SetCertProvider(relay.StaticCert(cert), false)
+	case *acmeOn:
+		if *cfToken == "" {
+			*cfToken = os.Getenv(relaycfg.CloudflareTokenEnv)
+		}
+		mgr, err := acme.New(acme.Options{
+			DataDir: *dataDir, Email: *acmeEmail, BaseDomain: *baseDomain, PublicHost: *publicHost,
+			PublicIP: *publicIP, Staging: *acmeStaging, DNSProvider: *acmeDNS, CloudflareToken: *cfToken,
+			ManualHooks: acme.ManualHooks{Present: logManualRecord(log)},
+			Domains:     r.Store(), Logger: log,
+		})
+		if err != nil {
+			return err
+		}
+		acmeMgr = mgr
+		r.SetCertProvider(mgr.GetCertificate, true)
 	default:
-		return errors.New("provide --tls-cert and --tls-key, or --dev (automatic ACME arrives in phase 4)")
+		return errors.New("provide --acme (with --acme-email), --tls-cert and --tls-key, or --dev")
 	}
 
-	r, err := relay.New(relay.Config{
-		DataDir: *dataDir, PublicHost: *publicHost, BaseDomain: *baseDomain,
-		HTTPSAddr: *httpsAddr, HTTPAddr: *httpAddr, AgentAddr: *agentAddr,
-		TCPBindHost: *tcpBind, TCPPortRange: pr, Certs: certs, Version: Version, Logger: log,
-	})
-	if err != nil {
-		return err
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	if err := r.Start(ctx); err != nil {
 		return err
+	}
+	if acmeMgr != nil {
+		defer acmeMgr.Stop()
+		if err := acmeMgr.Start(ctx); err != nil {
+			log.Error("could not start certificate management", "err", err)
+		}
 	}
 	<-ctx.Done()
 	log.Info("shutting down")
 	sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return r.Stop(sctx)
+}
+
+// logManualRecord returns a manual-DNS Present hook for the daemon: it logs the
+// required TXT record. (The install wizard uses an interactive hook instead.)
+func logManualRecord(log *slog.Logger) func(context.Context, acme.ManualRecord) error {
+	return func(ctx context.Context, rec acme.ManualRecord) error {
+		log.Warn("manual DNS-01: create this TXT record, then the certificate will be issued on the next attempt",
+			"name", rec.Name, "value", rec.Value)
+		// Give the operator a window to add the record before this attempt fails.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Minute):
+			return nil
+		}
+	}
 }
 
 func cmdToken(args []string) error {

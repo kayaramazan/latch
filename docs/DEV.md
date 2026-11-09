@@ -136,3 +136,85 @@ outage (route works again in well under 10 s), and a protocol-version mismatch
 reported as a clear error. `go test ./latchd/internal/api/` covers the
 management API (route/relay lifecycle, structured validation errors,
 loopback-only binding).
+
+## Phase 4 — real certificates, setup wizard, custom domains
+
+On a public server the relay obtains its own certificates with ACME instead of
+the dev CA.
+
+### Setup wizard
+
+```sh
+# One-line install (downloads the binary, runs the wizard):
+curl -sSL https://github.com/kayaramazan/latch/releases/latest/download/install.sh | sh
+
+# Or, with a local build, run the wizard directly:
+bin/latch-relay install            # interactive
+bin/latch-relay install --yes \
+  --public-host relay.example.com --email you@example.com \
+  --public-ip 203.0.113.10 --dns cloudflare --cloudflare-token "$CF_TOKEN" \
+  --dry-run                        # prints the config + systemd unit, writes nothing
+```
+
+The wizard writes `/etc/latch-relay/config.yaml` (0600), a hardened systemd unit
+(`/etc/systemd/system/latch-relay.service`, non-root + `CAP_NET_BIND_SERVICE`),
+mints a first token and prints a `latch://…` connection string. It runs a DNS
+precheck that warns if `*.<base-domain>` does not resolve to the server yet.
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now latch-relay
+latch-relay doctor --config /etc/latch-relay/config.yaml
+```
+
+### ACME modes
+
+- **Cloudflare DNS-01** (wildcard): set `acme.dns_provider: cloudflare` and a
+  scoped `cloudflare_token` (or `$CLOUDFLARE_API_TOKEN`). The relay gets
+  `*.relay.example.com` automatically.
+- **Manual TXT**: `acme.dns_provider: manual`. The relay logs the `_acme-challenge`
+  TXT record to create; add it, and the certificate is issued on the next attempt.
+- **Staging**: `acme.staging: true` (or `--acme-staging`) uses Let's Encrypt
+  staging — untrusted certs, but high rate limits for testing.
+
+Run the relay from the config:
+
+```sh
+latch-relay run --config /etc/latch-relay/config.yaml
+```
+
+### Custom domains
+
+A customer CNAMEs their hostname to the relay; the operator registers it:
+
+```sh
+latch-relay domain add app.customer.com
+# customer adds: app.customer.com CNAME relay.example.com
+latch-relay domain verify app.customer.com     # checks DNS points here
+latch-relay domain list
+```
+
+Only registered domains whose DNS actually points at the relay get an on-demand
+certificate (TLS-ALPN-01). This is the ACME abuse guard: the relay never
+requests a certificate for a name it was not told to serve and that has not
+delegated to it. An agent announcing a route for the custom hostname then serves
+it like any other.
+
+### Agent trust
+
+The agent verifies the relay's `:7443` certificate against the system roots. A
+dev CA is trusted only when it is explicitly provided (the `ca=` connection-string
+parameter or `--ca-file`); verification is never skipped.
+
+### ACME integration test (Pebble)
+
+The ACME issuance path is exercised against a local
+[Pebble](https://github.com/letsencrypt/pebble) server, not real Let's Encrypt:
+
+```sh
+# with Pebble + challtestsrv running:
+PEBBLE_CA_FILE=/path/to/pebble.minica.pem make test-acme
+```
+
+This test is behind the `acme_pebble` build tag and excluded from `make test`;
+CI runs it as a separate job.

@@ -132,6 +132,13 @@ var migrations = []string{
 		key   TEXT PRIMARY KEY,
 		value TEXT NOT NULL
 	);`,
+	`CREATE TABLE custom_domains (
+		domain      TEXT PRIMARY KEY,
+		target      TEXT NOT NULL,
+		created_at  TEXT NOT NULL,
+		verified_at TEXT,
+		note        TEXT NOT NULL DEFAULT ''
+	);`,
 }
 
 func (s *Store) migrate(ctx context.Context) error {
