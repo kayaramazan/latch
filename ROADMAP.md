@@ -416,9 +416,9 @@ akışı; validate → affected routes.
 **Amaç:** SPEC'teki "2 dakikada HTTPS" deneyimini arayüzden sunmak.
 
 **Teslimatlar**
-- [ ] Vite + React + TS, TanStack Query, Tailwind, Recharts; i18n altyapısı
+- [x] Vite + React + TS, TanStack Query, Tailwind, Recharts; i18n altyapısı
       (en varsayılan, tr); `go:embed` ile latchd içinde servis; dev'de proxy.
-- [ ] Ekranlar (`docs/SCREENS.md`): İlk kurulum/giriş; Pano; Route listesi
+- [x] Ekranlar (`docs/SCREENS.md`): İlk kurulum/giriş; Pano; Route listesi
       (durum rengi: health + tünel bağlantısı); **Route ekle** iki-soru akışı
       (Ne? → Nasıl? Tünel: relay seç, alt ad üret/özel alan; Yerel: alan adı
       + DNS kontrolü); Route detayı (header, path, health, TLS, politikalar);
@@ -427,17 +427,17 @@ akışı; validate → affected routes.
       DNS kontrolü; sync durumu ve "relay senkron değil" uyarısı); Canlı
       akış; Loglar; Config geçmişi/geri al; Yedek/geri yükle; Ayarlar;
       Explain.
-- [ ] Uygula öncesi doğrulama ve etkilenen route listesi diyaloğu; alan
+- [x] Uygula öncesi doğrulama ve etkilenen route listesi diyaloğu; alan
       düzeyinde hata gösterimi.
-- [ ] Playwright: en az "route ekle (tünel)" akışı uçtan uca.
+- [x] Playwright: en az "route ekle (tünel)" akışı uçtan uca.
 
 **Testler:** bileşen testleri (Vitest) kritik formlar için; Playwright CI'da.
 
 **DoD**
-- [ ] SPEC başarı ölçütü (tünel) arayüzden: relay'e bağlan → "3000 portunu
+- [x] SPEC başarı ölçütü (tünel) arayüzden: relay'e bağlan → "3000 portunu
       paylaş" → HTTPS adres; IP engelle + rate limit → canlı akışta relay'de
       kesildiği görülüyor.
-- [ ] Türkçe çeviri eksiksiz; eksik anahtar CI'da hata.
+- [x] Türkçe çeviri eksiksiz; eksik anahtar CI'da hata.
 
 **Karar noktaları:** tasarım dili (öneri: sade, shadcn/ui benzeri);
 koyu tema v1'de var mı.

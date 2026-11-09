@@ -418,3 +418,49 @@ flow (401 → login → CSRF-gated mutations), the cross-origin CSRF defense, th
 non-loopback-requires-password rule, config validate/rollback, backup
 export/import, the WebSocket handshake, and `TestOpenAPIMatchesRoutes` (spec ==
 code).
+
+## Phase 9 — the web UI
+
+`latchd` serves a React single-page app (latch-ui) at the same origin as the
+API, so the whole product is usable from a browser with no terminal.
+
+### Develop
+
+```sh
+cd latch-ui
+pnpm install
+pnpm dev          # Vite dev server on :5173, proxying /api to 127.0.0.1:4040
+pnpm test         # Vitest component tests
+pnpm check-i18n   # fails if en/tr dictionaries diverge
+```
+
+### Build and embed
+
+```sh
+make ui-build     # writes latchd/internal/web/dist (embedded via go:embed)
+make build-latchd # the binary now serves the UI
+latchd run        # open http://127.0.0.1:4040
+```
+
+The built bundle is committed so `go build` always yields a working binary;
+regenerate it with `make ui-build`. The management API gives `/api` and
+`/metrics` precedence; everything else is served by the SPA (unknown paths fall
+back to `index.html` for client-side routing). When a management password is
+set, the UI itself always loads (so the login screen appears), but API calls
+require the session cookie and a CSRF token.
+
+### Screens
+
+Dashboard, Routes (+ two-step add wizard), Route detail, IP policies (with a
+"does this IP pass?" tester backed by `/api/explain`), Rate limits, Relays
+(connect by pasting a `latch://` string, "set up your relay" wizard, live sync
+state), Live (SSE event stream), History (versions + rollback + backup), Settings
+and Explain. Every string goes through i18n (English default, Turkish included).
+
+### Tests
+
+`pnpm test` (Vitest) covers the add-route wizard — the critical form. `make
+test-ui-e2e` runs the Playwright flow (`e2e/add-route.spec.ts`) end to end
+against a running latchd; it needs a browser and runs in CI, not in this dev
+environment. The i18n completeness check (`make test-ui`) is the CI gate for the
+"missing translation key fails the build" requirement.

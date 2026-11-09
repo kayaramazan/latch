@@ -216,9 +216,14 @@ func (s *Server) guard(next http.Handler) http.Handler {
 				return
 			}
 		}
-		// Open endpoints.
+		// The embedded UI and public endpoints are always served; only /api
+		// (besides login/me/system) requires a session when auth is enabled.
 		p := r.URL.Path
-		if p == "/api/auth/login" || p == "/api/system" || p == "/metrics" {
+		if !strings.HasPrefix(p, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if p == "/api/auth/login" || p == "/api/auth/me" || p == "/api/system" {
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -5,6 +5,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Phase 9: web UI (latch-ui). A Vite + React + TypeScript + Tailwind + TanStack
+  Query + Recharts single-page app, served by latchd from an embedded build
+  (go:embed) at the same origin as the API, with an SPA fallback for client-side
+  routes. Screens: login, dashboard (req/s, p50/p95/p99, status mix, top routes,
+  top blocked), routes list with health colours, the two-question add-route
+  wizard (target → tunnel/relay or local), route detail with policy binding, IP
+  policies with a "does this IP pass?" tester, rate limits, relays (connect by
+  pasting a latch:// string, "set up your relay" wizard, live sync state), a live
+  event stream (SSE), config history with rollback and backup export/import,
+  settings, and explain. Full English + Turkish i18n with a CI check that fails
+  on any missing/empty key. Auth-aware client (login → session cookie + CSRF).
+  Tests: Vitest for the add-route wizard, Playwright for the tunnel-add flow
+  (CI). `make ui-build` embeds the bundle; the UI, SPA fallback and same-origin
+  API were verified with the real binary. Decisions: plain Tailwind (shadcn-like,
+  no component-lib dependency); dark theme follows the OS. See docs/DEV.md.
 - Phase 8: management API (REST + WebSocket) and authentication. The agent API is
   now complete and documented: config get/versions/diff/rollback and a dry-run
   `POST /api/config/validate` (field errors + affected routes, nothing saved);

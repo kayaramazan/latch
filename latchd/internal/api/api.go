@@ -16,6 +16,7 @@ import (
 	"github.com/kayaramazan/latch/latchd/internal/events"
 	"github.com/kayaramazan/latch/latchd/internal/store"
 	"github.com/kayaramazan/latch/latchd/internal/tunnel"
+	"github.com/kayaramazan/latch/latchd/internal/web"
 	"github.com/kayaramazan/latch/policy"
 	"github.com/kayaramazan/latch/proto/model"
 )
@@ -53,6 +54,9 @@ func New(st *store.Store, tun StatusProvider, ev *events.Store, version string, 
 	s := &Server{store: st, tun: tun, events: ev, log: log, version: version, mux: http.NewServeMux(),
 		sessions: newSessionStore(), logins: newLoginLimiter()}
 	s.routes()
+	// The embedded UI serves everything that is not an API route; the mux gives
+	// the more specific /api and /metrics patterns precedence.
+	s.mux.Handle("/", web.Handler())
 	return s
 }
 

@@ -251,7 +251,31 @@ Decisions, assumptions and backlog. Newest first within each section.
   limited to localhost/127.0.0.1. Settings PUT never returns or clobbers the
   password hash (GET omits it; PUT without it preserves it).
 
+- 2026-11-09 — (Faz 9) latch-ui is Vite + React 18 + TS + Tailwind + TanStack
+  Query + Recharts, served by latchd via go:embed. The build writes to
+  latchd/internal/web/dist (go:embed cannot reach outside its package); the web
+  handler serves it with an SPA fallback and the mux gives /api and /metrics
+  precedence. Auth: the UI (non-/api paths) is always served so the login screen
+  loads; the API requires a session when a password is set; the login flow stores
+  the CSRF token in memory and the client attaches it to mutations.
+- 2026-11-09 — (Faz 9) i18n: a tiny dictionary (en + tr), `make test-ui` runs
+  check-i18n which fails on any key missing/empty in either language (ROADMAP DoD
+  "missing key = CI error"). 106 keys.
+- 2026-11-09 — (Faz 9) Decision points resolved: design language = plain Tailwind
+  utilities, shadcn-like (no component library dependency, to keep the bundle
+  small); dark theme IS in v1 via Tailwind `darkMode: "media"` (follows the OS).
+- 2026-11-09 — (Faz 9) The built dist is committed so `go build ./...` always
+  produces a working binary without Node; regenerate with `make ui-build`. The
+  Recharts bundle is ~600 KB (fine for a local admin UI); code-splitting is a
+  backlog refinement.
+- 2026-11-09 — (Faz 9) Tests: Vitest covers the add-route wizard (critical form);
+  Playwright (`make test-ui-e2e`) covers the tunnel add flow end to end and runs
+  in CI (needs a browser; not run in this dev environment). The add-route flow,
+  UI serving + SPA fallback, and same-origin API were verified by hand.
+
 ## Backlog
+
+- latch-ui code-splitting (Recharts) to shrink the main bundle. Faz 9 deferred.
 
 - High-traffic AccessEvent sampling threshold. Faz 7 deferred.
 
