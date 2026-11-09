@@ -2,17 +2,20 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.Version=$(VERSION)
 BIN     := bin
 
-.PHONY: all build build-latchd build-relay test test-acme test-ui test-ui-e2e lint fmt vet tidy clean ui-install ui-build
+.PHONY: all build build-latchd build-relay build-control test test-acme test-ui test-ui-e2e lint fmt vet tidy clean ui-install ui-build
 
 all: build
 
-build: build-latchd build-relay
+build: build-latchd build-relay build-control
 
 build-latchd:
 	go build -ldflags '$(LDFLAGS)' -o $(BIN)/latchd ./latchd
 
 build-relay:
 	go build -ldflags '$(LDFLAGS)' -o $(BIN)/latch-relay ./latch-relay
+
+build-control:
+	go build -ldflags '$(LDFLAGS)' -o $(BIN)/latch-control ./latch-control
 
 test:
 	go test -race -count=1 ./...

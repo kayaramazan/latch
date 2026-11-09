@@ -587,24 +587,24 @@ kapalı kalır, CLI ile yönetim devam eder).
 kontrol düzleminin tek bir relay'i sürebilmesi.
 
 **Teslimatlar**
-- [ ] Relay'de bayrakla açılan **kontrol API'si** (mTLS, özel arayüz;
+- [x] Relay'de bayrakla açılan **kontrol API'si** (mTLS, özel arayüz;
       varsayılan kapalı): token CRUD, custom-domain CRUD, oturum/route listesi,
       sağlık/kapasite.
-- [ ] **Kullanım raporu:** relay → kontrol düzlemi; bayt, bağlantı, aktif route,
+- [x] **Kullanım raporu:** relay → kontrol düzlemi; bayt, bağlantı, aktif route,
       AccessEvent özetleri (Faz 7 olay deposundan beslenir).
-- [ ] Filo kaydı: relay `register` + periyodik heartbeat (bölge, sürüm,
+- [x] Filo kaydı: relay `register` + periyodik heartbeat (bölge, sürüm,
       kapasite, sağlık); kontrol düzlemi relay envanteri tutar.
-- [ ] `latch-control` iskeleti: bir relay'i kaydeder ve token/domain'i uzaktan
+- [x] `latch-control` iskeleti: bir relay'i kaydeder ve token/domain'i uzaktan
       sürer (henüz tek kiracı, UI yok).
-- [ ] Self-hosted dağıtımda kontrol API'si kapalı kalır; CLI yönetimi bozulmaz.
+- [x] Self-hosted dağıtımda kontrol API'si kapalı kalır; CLI yönetimi bozulmaz.
 
 **Testler:** kontrol API auth (mTLS doğru/yanlış sertifika), uzaktan token/domain
 CRUD, relay çevrimdışıyken kontrol düzlemi davranışı, kullanım raporu doğruluğu.
 
 **DoD**
-- [ ] Kontrol düzleminden token üret → ajan o token'la relay'e bağlanıp tünel
+- [x] Kontrol düzleminden token üret → ajan o token'la relay'e bağlanıp tünel
       açıyor; kullanım raporu kontrol düzleminde görünüyor.
-- [ ] Kontrol API'si internete kapalı; yetkisiz çağrı reddediliyor.
+- [x] Kontrol API'si internete kapalı; yetkisiz çağrı reddediliyor.
 
 ---
 

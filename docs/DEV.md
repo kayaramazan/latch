@@ -464,3 +464,53 @@ test-ui-e2e` runs the Playwright flow (`e2e/add-route.spec.ts`) end to end
 against a running latchd; it needs a browser and runs in CI, not in this dev
 environment. The i18n completeness check (`make test-ui`) is the CI gate for the
 "missing translation key fails the build" requirement.
+
+## SaaS S1 — the relay control API and latch-control
+
+The managed SaaS adds a private, mTLS control API to the relay and a skeleton
+control plane (`latch-control`). This is **off for self-hosted** relays (no
+`--control` flag → nothing changes).
+
+### Bootstrap the dev mTLS trust set
+
+```sh
+latch-control gen-certs --dir ./certs --relay-hosts 127.0.0.1,localhost
+# writes ca.crt/key, relay-control.crt/key (server), control-plane.crt/key (client)
+```
+
+### Run a relay with the control API + heartbeats
+
+```sh
+latch-relay run --dev --public-host 127.0.0.1 --base-domain relay.local \
+  --agent-addr 127.0.0.1:7643 --https-addr 127.0.0.1:8643 --http-addr "" \
+  --control --control-addr 127.0.0.1:7644 \
+  --control-cert certs/relay-control.crt --control-key certs/relay-control.key \
+  --control-client-ca certs/ca.crt \
+  --relay-id relay-eu-1 --region eu --public-ip 127.0.0.1 \
+  --control-plane-url http://127.0.0.1:9100 --control-reg-token SECRET
+```
+
+### Run the control plane and drive the relay
+
+```sh
+latch-control serve --listen 127.0.0.1:9100 --reg-token SECRET \
+  --client-cert certs/control-plane.crt --client-key certs/control-plane.key --relay-ca certs/ca.crt
+
+curl 127.0.0.1:9100/relays                              # fleet inventory + usage (from heartbeats)
+curl -X POST 127.0.0.1:9100/relays/relay-eu-1/tokens \  # mint a token on the relay over mTLS
+  -d '{"name":"account-123","hostnames":["*.relay.local"]}'
+# → {"connectionString":"latch://…"} — paste into an agent
+```
+
+The relay's control API is only reachable with the control plane's client
+certificate; a plain request fails at the TLS handshake. The relay heartbeats
+its usage (bytes, requests, denials) and health (agents, routes) every 15s, so
+`GET /relays` reflects live traffic.
+
+### What the S1 tests cover
+
+`go test ./latch-relay/internal/control/` exercises the mTLS enforcement (no
+client cert → rejected) and the token/domain lifecycle through the shared
+`proto/control` client. `go test ./latch-control/internal/plane/` covers
+heartbeat auth + fleet inventory. The full chain (control-plane token → agent
+tunnel → usage in the control plane) was verified by hand.

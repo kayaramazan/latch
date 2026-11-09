@@ -29,5 +29,6 @@ one React UI served by the agent, a thin Electron shell.
   relay's dev CA file.
 - Module path `github.com/kayaramazan/latch`, single go.mod, Apache-2.0.
 - Tunnel control messages: length-prefixed JSON (see PROTOCOL.md). Do not switch encodings.
-- Monorepo layout: `/latchd`, `/latch-relay`, `/latch-ui`, `/electron`, `/proto`,
-  `/policy` (shared policy engine), `/docs`, `/deploy`.
+- Monorepo layout: `/latchd`, `/latch-relay`, `/latch-control` (SaaS control
+  plane), `/latch-ui`, `/electron`, `/proto`, `/policy` (shared policy engine),
+  `/docs`, `/deploy`.

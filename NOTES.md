@@ -288,6 +288,28 @@ Decisions, assumptions and backlog. Newest first within each section.
   (packaging) + Faz 12 (security review/hardening) in as the launch gate, then
   S1→S3. A security review is a prerequisite before onboarding paying users.
 
+- 2026-11-09 — (Faz S1) The relay control API is live: `latch-relay/internal/control`
+  serves token CRUD, custom-domain CRUD, sessions and health over **mTLS**
+  (`RequireAndVerifyClientCert` against the control plane's CA), on a private
+  listener, **off unless `--control`** is set. Self-hosted relays never enable it
+  and keep CLI management. Shared contract + client in `proto/control`.
+- 2026-11-09 — (Faz S1) Usage: `latch-relay/internal/usage` accumulates bytes/
+  requests/denials from the relay's AccessEvents; the relay pushes a **heartbeat**
+  (register + liveness + usage + health) to the control plane every 15s
+  (`--control-plane-url` + bearer `--control-reg-token`). One message does fleet
+  registration, heartbeat and metering.
+- 2026-11-09 — (Faz S1) `latch-control` skeleton (new top-level binary +
+  `internal/plane`): receives heartbeats into an in-memory fleet inventory and
+  drives a relay's control API (mTLS) to mint tokens. `gen-certs` bootstraps the
+  dev mTLS trust set (CA + relay-control + control-plane certs). Postgres,
+  accounts and multi-tenancy are S2. Verified end to end: control plane mints a
+  token → agent connects + tunnel serves 200 → usage (requests, agents=1) shows
+  in the control plane → mTLS refuses a client without a cert.
+- 2026-11-09 — (Faz S1) New top-level dir `/latch-control` joins the monorepo.
+  In dev, the control-plane token's connection string uses the relay's PublicHost
+  with no embedded CA (correct for production real-DNS/real-cert); the local smoke
+  sets `--public-host 127.0.0.1` and `latchd relay add --ca-file <devca>`.
+
 ## Backlog
 
 - latch-ui code-splitting (Recharts) to shrink the main bundle. Faz 9 deferred.

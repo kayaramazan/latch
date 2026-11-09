@@ -4,8 +4,11 @@
 package relay
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -18,12 +21,15 @@ import (
 	"time"
 
 	"github.com/kayaramazan/latch/latch-relay/internal/auth"
+	"github.com/kayaramazan/latch/latch-relay/internal/control"
 	"github.com/kayaramazan/latch/latch-relay/internal/ingress"
 	"github.com/kayaramazan/latch/latch-relay/internal/metrics"
 	"github.com/kayaramazan/latch/latch-relay/internal/policies"
 	"github.com/kayaramazan/latch/latch-relay/internal/registry"
 	"github.com/kayaramazan/latch/latch-relay/internal/session"
 	"github.com/kayaramazan/latch/latch-relay/internal/store"
+	"github.com/kayaramazan/latch/latch-relay/internal/usage"
+	pcontrol "github.com/kayaramazan/latch/proto/control"
 	"github.com/kayaramazan/latch/proto/model"
 	"github.com/kayaramazan/latch/proto/tunnel"
 )
@@ -56,6 +62,21 @@ type Config struct {
 	TrustedProxies []string
 	// MetricsAddr is the Prometheus /metrics listen address ("" disables).
 	MetricsAddr string
+	// PublicIP is the relay's public IP (for custom-domain A-record checks).
+	PublicIP string
+
+	// Control configures the private, mTLS, flag-gated SaaS control API. It is
+	// off unless ControlEnabled is set. Self-hosted relays leave it off.
+	ControlEnabled    bool
+	ControlAddr       string // private listen address, e.g. 127.0.0.1:7444
+	ControlServerCert string // PEM file for the control listener
+	ControlServerKey  string
+	ControlClientCA   string // PEM file: the control plane's CA (verifies clients)
+	RelayID           string
+	Region            string
+	ControlPlaneURL   string // where to push heartbeats ("" disables push)
+	ControlRegToken   string // bearer token for heartbeat auth
+	Capacity          int
 
 	Certs CertProvider
 	// ACMEALPNChallenge adds the "acme-tls/1" ALPN to the HTTPS listener so the
@@ -104,6 +125,9 @@ func (c *Config) defaults() error {
 	return nil
 }
 
+// tunnelDefaultAgentPort mirrors tunnel.DefaultAgentPort.
+const tunnelDefaultAgentPort = 7443
+
 // Relay is a running or startable relay.
 type Relay struct {
 	cfg      Config
@@ -112,14 +136,16 @@ type Relay struct {
 	auth     *auth.Manager
 	policies *policies.Manager
 	metrics  *metrics.Metrics
+	usage    *usage.Tracker
+	control  *control.Server
 	registry *registry.Registry
 	sessions *session.Manager
 	ingress  *ingress.Ingress
 
-	httpsLn, httpLn, agentLn, metricsLn net.Listener
-	httpsSrv, httpSrv, metricsSrv       *http.Server
-	cancel                              context.CancelFunc
-	wg                                  sync.WaitGroup
+	httpsLn, httpLn, agentLn, metricsLn, controlLn net.Listener
+	httpsSrv, httpSrv, metricsSrv                  *http.Server
+	cancel                                         context.CancelFunc
+	wg                                             sync.WaitGroup
 }
 
 // New opens the store and builds all components without listening.
@@ -154,6 +180,7 @@ func New(cfg Config) (*Relay, error) {
 	}
 	r.policies = pm
 	r.metrics = metrics.New()
+	r.usage = usage.New()
 	_, httpsPortStr, _ := net.SplitHostPort(cfg.HTTPSAddr)
 	httpsPort, _ := strconv.Atoi(httpsPortStr)
 	if httpsPort == 0 {
@@ -161,6 +188,7 @@ func New(cfg Config) (*Relay, error) {
 	}
 	onEvent := func(ev model.AccessEvent) {
 		r.metrics.Record(ev)
+		r.usage.Record(ev)
 		if cfg.OnEvent != nil {
 			cfg.OnEvent(ev)
 		}
@@ -191,6 +219,19 @@ func New(cfg Config) (*Relay, error) {
 			}
 			return tunnel.PolicyAck{Version: version}, nil
 		}})
+	if cfg.ControlEnabled {
+		_, agentPortStr, _ := net.SplitHostPort(cfg.AgentAddr)
+		agentPort, _ := strconv.Atoi(agentPortStr)
+		if agentPort == 0 {
+			agentPort = tunnelDefaultAgentPort
+		}
+		r.control = control.New(control.Deps{
+			Auth: r.auth, Store: st, Sessions: r.sessions, Registry: r.registry, Usage: r.usage,
+			RelayID: cfg.RelayID, Region: cfg.Region, Version: cfg.Version,
+			PublicHost: cfg.PublicHost, BaseDomain: cfg.BaseDomain, AgentPort: agentPort,
+			PublicIP: cfg.PublicIP, Logger: cfg.Logger,
+		})
+	}
 	return r, nil
 }
 
@@ -305,6 +346,13 @@ func (r *Relay) Start(ctx context.Context) error {
 	}
 	r.serve(func() { r.updateGauges(ctx) })
 
+	if r.cfg.ControlEnabled {
+		if err := r.startControl(ctx); err != nil {
+			r.closeListeners()
+			return err
+		}
+	}
+
 	r.log.Info("relay listening", "https", r.httpsLn.Addr(), "agent", r.agentLn.Addr(), "publicHost", r.cfg.PublicHost, "version", r.cfg.Version)
 	return nil
 }
@@ -318,7 +366,7 @@ func (r *Relay) serve(fn func()) {
 }
 
 func (r *Relay) closeListeners() {
-	for _, l := range []net.Listener{r.httpsLn, r.httpLn, r.agentLn, r.metricsLn} {
+	for _, l := range []net.Listener{r.httpsLn, r.httpLn, r.agentLn, r.metricsLn, r.controlLn} {
 		if l != nil {
 			_ = l.Close()
 		}
@@ -369,6 +417,76 @@ func (r *Relay) updateGauges(ctx context.Context) {
 			r.metrics.SetAgents(len(r.sessions.Sessions()))
 		}
 	}
+}
+
+// startControl brings up the mTLS control listener and the heartbeat pusher.
+func (r *Relay) startControl(ctx context.Context) error {
+	if r.cfg.ControlServerCert == "" || r.cfg.ControlServerKey == "" || r.cfg.ControlClientCA == "" {
+		return errors.New("relay: control API needs --control-cert, --control-key and --control-client-ca")
+	}
+	cert, err := tls.LoadX509KeyPair(r.cfg.ControlServerCert, r.cfg.ControlServerKey)
+	if err != nil {
+		return fmt.Errorf("relay: control cert: %w", err)
+	}
+	caPEM, err := os.ReadFile(r.cfg.ControlClientCA)
+	if err != nil {
+		return fmt.Errorf("relay: control client CA: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEM) {
+		return errors.New("relay: control client CA is not a valid certificate")
+	}
+	addr := r.cfg.ControlAddr
+	if addr == "" {
+		addr = "127.0.0.1:7444"
+	}
+	ln, err := tls.Listen("tcp", addr, control.MTLSConfig(cert, pool))
+	if err != nil {
+		return fmt.Errorf("relay: listen control %s: %w", addr, err)
+	}
+	r.controlLn = ln
+	r.serve(func() { _ = r.control.Serve(ctx, ln) })
+	if r.cfg.ControlPlaneURL != "" {
+		r.serve(func() { r.heartbeatLoop(ctx) })
+	}
+	return nil
+}
+
+// heartbeatLoop pushes register+liveness+usage to the control plane.
+func (r *Relay) heartbeatLoop(ctx context.Context) {
+	t := time.NewTicker(15 * time.Second)
+	defer t.Stop()
+	r.sendHeartbeat(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			r.sendHeartbeat(ctx)
+		}
+	}
+}
+
+func (r *Relay) sendHeartbeat(ctx context.Context) {
+	hb := pcontrol.Heartbeat{
+		RelayID: r.cfg.RelayID, Region: r.cfg.Region, Version: r.cfg.Version,
+		ControlURL: r.cfg.ControlAddr, Capacity: r.cfg.Capacity, Health: r.control.Health(ctx),
+	}
+	body, _ := json.Marshal(hb)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.cfg.ControlPlaneURL+"/relays/heartbeat", bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if r.cfg.ControlRegToken != "" {
+		req.Header.Set("Authorization", "Bearer "+r.cfg.ControlRegToken)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		r.log.Debug("heartbeat failed", "err", err)
+		return
+	}
+	_ = resp.Body.Close()
 }
 
 func (r *Relay) watchRevocations(ctx context.Context) {

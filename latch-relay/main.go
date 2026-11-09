@@ -150,6 +150,16 @@ func cmdRun(args []string) error {
 	metricsAddr := fs.String("metrics-addr", "", "Prometheus /metrics listen address (empty disables)")
 	geoipPath := fs.String("geoip", "", "path to a MaxMind mmdb for country rules")
 	trustedProxies := fs.String("trusted-proxies", "", "comma-separated CIDRs whose X-Forwarded-For is trusted")
+	controlEnabled := fs.Bool("control", false, "enable the private mTLS control API (SaaS; off for self-hosted)")
+	controlAddr := fs.String("control-addr", "127.0.0.1:7444", "control API listen address (keep private)")
+	controlCert := fs.String("control-cert", "", "PEM server certificate for the control API")
+	controlKey := fs.String("control-key", "", "PEM server key for the control API")
+	controlClientCA := fs.String("control-client-ca", "", "PEM CA that signs the control plane's client certificate")
+	relayID := fs.String("relay-id", "", "this relay's id in the fleet")
+	region := fs.String("region", "", "this relay's region")
+	controlPlaneURL := fs.String("control-plane-url", "", "control plane base URL for heartbeats (empty disables push)")
+	controlRegToken := fs.String("control-reg-token", "", "bearer token for heartbeat auth")
+	capacity := fs.Int("capacity", 0, "advertised token capacity for placement")
 	logLevel := fs.String("log-level", "info", "debug|info|warn|error")
 	logFormat := fs.String("log-format", "text", "text|json")
 	if err := fs.Parse(args); err != nil {
@@ -217,7 +227,11 @@ func cmdRun(args []string) error {
 		DataDir: *dataDir, PublicHost: *publicHost, BaseDomain: *baseDomain,
 		HTTPSAddr: *httpsAddr, HTTPAddr: *httpAddr, AgentAddr: *agentAddr,
 		TCPBindHost: *tcpBind, TCPPortRange: pr, MetricsAddr: *metricsAddr, GeoIPPath: *geoipPath,
-		TrustedProxies: splitCSV(*trustedProxies), Version: Version, Logger: log,
+		TrustedProxies: splitCSV(*trustedProxies), PublicIP: *publicIP,
+		ControlEnabled: *controlEnabled, ControlAddr: *controlAddr, ControlServerCert: *controlCert,
+		ControlServerKey: *controlKey, ControlClientCA: *controlClientCA, RelayID: *relayID, Region: *region,
+		ControlPlaneURL: *controlPlaneURL, ControlRegToken: *controlRegToken, Capacity: *capacity,
+		Version: Version, Logger: log,
 	})
 	if err != nil {
 		return err
