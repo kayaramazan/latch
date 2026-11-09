@@ -188,19 +188,19 @@ aralığı; token hash algoritması.
 kopunca kendiliğinden toparlanır.
 
 **Teslimatlar**
-- [ ] `latchd/internal/tunnel`: relay istemcisi — TLS bağlan (sistem kökleri
+- [x] `latchd/internal/tunnel`: relay istemcisi — TLS bağlan (sistem kökleri
       veya `--ca-file`), Hello, store'daki tunnel route'ları için
       RouteAnnounce, stream open → yerel hedefe dial (`net.Dial` + iki yönlü
       kopya), Ping/Pong, graceful close.
-- [ ] Yeniden bağlanma: üstel geri çekilme + jitter (1s → 60s üst sınır),
+- [x] Yeniden bağlanma: üstel geri çekilme + jitter (1s → 60s üst sınır),
       bağlanınca rotaları yeniden duyurma, durum makinesi
       (`connecting/connected/backoff/stopped`) ve sayaçlar.
-- [ ] Birden fazla relay desteği (store'daki her Relay için bir istemci).
-- [ ] Route değişikliğinde (store olayı) anında RouteAnnounce farkı gönderme.
-- [ ] Sürüm uyumsuzluğunda net hata mesajı (Hello müzakeresi).
-- [ ] Minimal yönetim API'si (`127.0.0.1`, kimlik doğrulamasız bu fazda):
+- [x] Birden fazla relay desteği (store'daki her Relay için bir istemci).
+- [x] Route değişikliğinde (store olayı) anında RouteAnnounce farkı gönderme.
+- [x] Sürüm uyumsuzluğunda net hata mesajı (Hello müzakeresi).
+- [x] Minimal yönetim API'si (`127.0.0.1`, kimlik doğrulamasız bu fazda):
       `GET/POST/PUT/DELETE /api/routes`, `/api/relays`, `GET /api/status`.
-- [ ] `latchd` CLI (API'yi çağırır): `run`, `relay add --url --token
+- [x] `latchd` CLI (API'yi çağırır): `run`, `relay add --url --token
       [--ca-file]`, `route add --target 127.0.0.1:3000 --tunnel <relay>
       --hostname app.relay.example.com`, `route list`, `status`.
 
@@ -211,9 +211,9 @@ bağlantısı kesilince ajan geri çekilmeyle bağlanır ve rota tekrar çalış
 relay 502.
 
 **DoD**
-- [ ] `/etc/hosts` + dev CA ile elle demo: `localhost:3000` →
+- [x] `/etc/hosts` + dev CA ile elle demo: `localhost:3000` →
       `https://app.relay.local`. Demo adımları `docs/DEV.md`'de.
-- [ ] Ajanı öldürüp açınca kullanıcı müdahalesi olmadan tünel geri geliyor.
+- [x] Ajanı öldürüp açınca kullanıcı müdahalesi olmadan tünel geri geliyor.
 
 **Karar noktaları:** backoff parametreleri; birden fazla relay'e aynı
 hostname'in duyurulması yasak (öneri) mı?

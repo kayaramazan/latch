@@ -83,3 +83,56 @@ dev CA and a minimal in-process agent, then checks: HTTP request end to end
 token-scope and hostname-conflict rejections, supersede and revoke, the
 HTTP→HTTPS redirect, the agent-port ALPN requirement, and that announced
 routes survive a relay restart as offline entries.
+
+## Phase 3 — expose a local port through the relay (end to end)
+
+With a relay running on the dev CA (above), run the agent and point a local
+port at a public hostname. This mirrors the automated end-to-end test, but by
+hand.
+
+```sh
+go build -o bin/latchd ./latchd
+
+# 1. A local service to expose.
+python3 -m http.server 3000        # or any app on 127.0.0.1:3000
+
+# 2. A token scoped to the zone, with the dev CA embedded in the conn string.
+bin/latch-relay token create --data-dir /tmp/latch-relay \
+  --name laptop --hostnames '*.relay.local' --host 127.0.0.1 --port 7443 --dev
+# → prints: latch://127.0.0.1:7443/?token=lt_...&ca=...&name=laptop
+
+# 3. Start the agent (management API on 127.0.0.1:4040).
+bin/latchd run --data-dir /tmp/latchd &
+
+# 4. Register the relay and a route (CLI talks to the agent's local API).
+bin/latchd relay add --url 'latch://127.0.0.1:7443/?token=lt_...&ca=...&name=laptop'
+bin/latchd route add --target 127.0.0.1:3000 --tunnel laptop --hostname app.relay.local
+bin/latchd status
+
+# 5. Reach the local service through the relay over HTTPS.
+curl --cacert /tmp/latch-relay/devca/ca.pem \
+  --resolve app.relay.local:8443:127.0.0.1 https://app.relay.local:8443/
+```
+
+`latchd status` shows each relay's state (`connecting`/`connected`/`backoff`/
+`stopped`), RTT, announced routes and public URLs.
+
+Kill the agent (`kill %1` or Ctrl-C) and the hostname returns the relay's
+`503 Agent offline` page while the route stays registered. Start `latchd run`
+again and the tunnel re-establishes itself within a second or two — no manual
+re-announce. On a `*.relay.local` demo without real DNS, add
+`127.0.0.1 app.relay.local` to `/etc/hosts` (or keep using `curl --resolve`).
+
+The management API is loopback-only and unauthenticated in this phase; it
+refuses to bind a non-loopback address until authentication lands in phase 8.
+
+## What the agent end-to-end tests cover
+
+`go test ./latchd/internal/tunnel/` runs a relay, the real agent client and a
+local HTTP server in one process and checks: an HTTPS request reaching the
+local target with the client IP in `X-Forwarded-For`, WebSocket passthrough, a
+down local target surfacing as `502`, automatic reconnection after a relay
+outage (route works again in well under 10 s), and a protocol-version mismatch
+reported as a clear error. `go test ./latchd/internal/api/` covers the
+management API (route/relay lifecycle, structured validation errors,
+loopback-only binding).

@@ -1,20 +1,125 @@
-// Command latchd is the Latch agent: a local reverse proxy (embedded Caddy)
-// and tunnel client, managed through a local REST/WebSocket API and web UI.
+// Command latchd is the Latch agent: a tunnel client (and, from phase 6, a
+// local reverse proxy with embedded Caddy) managed through a local REST API
+// and web UI. Subcommands other than `run` and `version` talk to a running
+// daemon over its management API.
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/kayaramazan/latch/latchd/internal/api"
+	"github.com/kayaramazan/latch/latchd/internal/cli"
+	"github.com/kayaramazan/latch/latchd/internal/config"
+	"github.com/kayaramazan/latch/latchd/internal/store"
+	"github.com/kayaramazan/latch/latchd/internal/tunnel"
 )
 
 // Version is set at build time via -ldflags "-X main.Version=...".
 var Version = "dev"
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "version" {
+	if len(os.Args) < 2 {
+		usage()
+		os.Exit(2)
+	}
+	cmd, args := os.Args[1], os.Args[2:]
+	var err error
+	switch cmd {
+	case "run":
+		err = run(args)
+	case "relay":
+		err = cli.Relay(args)
+	case "route":
+		err = cli.Route(args)
+	case "status":
+		err = cli.Status(args)
+	case "version", "-v", "--version":
 		fmt.Println("latchd", Version)
 		return
+	case "help", "-h", "--help":
+		usage()
+		return
+	default:
+		fmt.Fprintf(os.Stderr, "latchd: unknown command %q\n\n", cmd)
+		usage()
+		os.Exit(2)
 	}
-	fmt.Fprintln(os.Stderr, "latchd: not implemented yet (see ROADMAP.md, phase 3)")
-	os.Exit(2)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "latchd:", err)
+		os.Exit(1)
+	}
+}
+
+func usage() {
+	fmt.Fprint(os.Stderr, `latchd — Latch agent
+
+Usage:
+  latchd run [--data-dir DIR] [--listen HOST:PORT]
+  latchd relay add --url latch://host:port/?token=... [--name NAME] [--ca-file FILE]
+  latchd relay list
+  latchd relay rm <relay-id|name>
+  latchd route add --target HOST:PORT --tunnel <relay> --hostname NAME [--name NAME] [--path /]
+  latchd route list
+  latchd route rm <route-id>
+  latchd status
+  latchd version
+
+Subcommands other than run talk to a running daemon (default http://127.0.0.1:4040,
+override with --api or LATCHD_API).
+`)
+}
+
+func run(args []string) error {
+	cfg, err := cli.ParseRun(args)
+	if err != nil {
+		return err
+	}
+	logger := cli.NewLogger(cfg.LogLevel)
+
+	paths, err := config.Resolve(cfg.DataDir)
+	if err != nil {
+		return err
+	}
+	logger.Info("latchd starting", "version", Version, "dataDir", paths.DataDir)
+
+	st, err := store.Open(paths.DBPath, store.Options{})
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	agentID, err := config.AgentID(paths)
+	if err != nil {
+		return err
+	}
+
+	listen := cfg.Listen
+	if listen == "" {
+		snap, _ := st.Current()
+		listen = snap.Settings.Listen
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	mgr := tunnel.NewManager(tunnel.Deps{Store: st, AgentID: agentID, AgentVersion: Version, Logger: logger})
+	mgrDone := make(chan struct{})
+	go func() {
+		defer close(mgrDone)
+		mgr.Run(ctx)
+	}()
+
+	srv := api.New(st, mgr, Version, logger)
+	err = srv.ListenAndServe(ctx, listen)
+
+	<-mgrDone
+	if err != nil {
+		return err
+	}
+	logger.Info("latchd stopped")
+	return nil
 }

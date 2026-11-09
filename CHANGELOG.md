@@ -5,6 +5,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Phase 3: agent tunnel client — first end-to-end. `latchd/internal/tunnel`:
+  a client per configured relay that dials over verifying TLS (system roots plus
+  the relay's optional dev CA; verification is never skipped), performs the
+  Hello/HelloAck handshake with version negotiation, announces the store's
+  tunnel routes (full set), serves relay-opened data streams by dialing the
+  local target and copying bytes both ways, answers ping/pong, and reconnects
+  with exponential backoff + jitter (1s→60s). A manager keeps one client per
+  relay in sync with the config store, re-announcing on route changes and
+  restarting a client when a relay's connection settings change. Management REST
+  API (`latchd/internal/api`, loopback-only, no auth yet): routes/relays CRUD and
+  `/api/status`. `latchd` CLI (`latchd/internal/cli`): `run`, `relay add/list/rm`,
+  `route add/list/rm`, `status` — the subcommands are thin clients of the local
+  API. Persistent agent id. End-to-end tests (relay + latchd + local server in
+  one process): HTTP with forwarded client IP, WebSocket passthrough, local
+  target down → 502, relay outage → automatic reconnect < 10s, version-mismatch
+  reporting. Verified against the real binaries with the dev CA (see docs/DEV.md).
 - Phase 2: tunnel protocol and relay core. `proto/tunnel` (control-message
   envelope + length-prefixed JSON codec, data-stream header/status, connection
   string, version negotiation, yamux config; fuzzed). latch-relay: SQLite store

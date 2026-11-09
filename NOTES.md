@@ -80,6 +80,33 @@ Decisions, assumptions and backlog. Newest first within each section.
   `gated` reads as an English adjective. Alternatives: keep Gate.
   Open: verify GitHub org/repo and domain availability before first publish.
 
+- 2026-11-09 — (Faz 3) Reconnect backoff: exponential 1s→60s, factor 2, full
+  jitter ±20% (random 0.8–1.2×). Backoff resets to 1s on every successful
+  handshake, so a flapping relay recovers fast while a dead one is polled at
+  most once a minute. Arbitrary but matches common agent defaults; configurable
+  later if needed.
+- 2026-11-09 — (Faz 3) The agent is a byte pipe on data streams: it reads the
+  StreamHeader, dials the local target, writes a 1-byte status, then copies raw
+  bytes both ways. It does not parse HTTP, so HTTP/1.1, WebSocket and raw TCP
+  all work through the same path. HTTP semantics live on the relay.
+- 2026-11-09 — (Faz 3) RouteAnnounce is always the full set for a relay. A route
+  add/remove/enable in the store pushes the new full set to the matching relay
+  client, which re-announces; the relay's full-set semantics withdraw whatever
+  is gone. No separate RouteWithdraw diffing on the agent in v1.
+- 2026-11-09 — (Faz 3) One hostname is bound to exactly one relay because it
+  lives on exactly one route (route.relayId), and model validation forbids
+  duplicate HTTP hostnames across routes. So "announce the same hostname to two
+  relays" cannot arise from a valid config; no extra agent-side guard needed.
+  Decision point from ROADMAP resolved: rely on model validation, not a new rule.
+- 2026-11-09 — (Faz 3) Management API binds loopback only and has NO auth in this
+  phase (127.0.0.1:4040). ListenAndServe refuses any non-loopback bind until
+  phase 8 adds authentication. Agent id is persisted in `<data-dir>/agent_id`
+  (0600) so reconnects supersede the previous session cleanly.
+- 2026-11-09 — (Faz 3) latchd CLI subcommands (relay/route/status) are thin HTTP
+  clients of the local API (default http://127.0.0.1:4040, $LATCHD_API or --api
+  to override); only `run` touches the store directly. Keeps one source of truth
+  (the daemon) and makes the CLI usable while the UI does not exist yet.
+
 ## Backlog
 
 - gRPC / h2c end-to-end through the tunnel (needs HTTP/2 to the agent). v1+.
