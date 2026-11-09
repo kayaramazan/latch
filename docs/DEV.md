@@ -363,3 +363,58 @@ rotated file with `--log-file /var/log/latchd.log`.
 route-filtered subscriptions, aggregation (counts, status classes, top routes,
 top blocked IPs), size-based retention (40k events trimmed under a 1 MB cap),
 and percentiles. `go test ./policy/ -run TestExplain` covers the explain trace.
+
+## Phase 8 — management API and authentication
+
+The agent's API is complete and documented in `docs/openapi.yaml`. A test keeps
+the spec and the code in sync (it fails if a route is added without documenting
+it, or vice versa) — that is the CI check for "OpenAPI matches code".
+
+### Authentication
+
+Loopback is open by default. To protect the API (required before binding a
+non-loopback address):
+
+```sh
+latchd auth set-password            # prompts, or --password
+latchd run --listen 0.0.0.0:4040    # refuses to start without a password
+```
+
+With a password set, clients log in and carry a session cookie plus a CSRF token:
+
+```sh
+# login → Set-Cookie: latch_session=…  and {"csrfToken":"…"}
+curl -c jar -X POST localhost:4040/api/auth/login -d '{"password":"…"}'
+# reads need the cookie:
+curl -b jar localhost:4040/api/routes
+# mutations also need the CSRF header:
+curl -b jar -H "X-CSRF-Token: <token>" -X POST localhost:4040/api/ip-policies -d '{…}'
+```
+
+Cross-origin mutations are refused (the `Origin` check), so a malicious website
+cannot drive the loopback API even when auth is off. Logins are rate-limited to
+5/minute per IP.
+
+### Config, validation, backup
+
+```sh
+curl localhost:4040/api/config/versions          # history
+curl -X POST localhost:4040/api/config/rollback/3 # roll back
+# dry-run a proposed snapshot before saving (field errors + affected routes):
+curl -X POST localhost:4040/api/config/validate -d @snapshot.json
+curl localhost:4040/api/backup > backup.json      # export
+curl -X POST 'localhost:4040/api/backup?mode=replace' -d @backup.json
+```
+
+### WebSocket
+
+`GET /api/ws` streams `{type: event|status|health|config}` frames — the UI uses
+it for live updates instead of polling.
+
+### What the API tests cover
+
+`go test ./latchd/internal/api/` covers every resource over httptest, the auth
+flow (401 → login → CSRF-gated mutations), the cross-origin CSRF defense, the
+non-loopback-requires-password rule, config validate/rollback, backup
+export/import, the WebSocket handshake, and `TestOpenAPIMatchesRoutes` (spec ==
+code).

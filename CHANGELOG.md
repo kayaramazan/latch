@@ -5,6 +5,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Phase 8: management API (REST + WebSocket) and authentication. The agent API is
+  now complete and documented: config get/versions/diff/rollback and a dry-run
+  `POST /api/config/validate` (field errors + affected routes, nothing saved);
+  backup export/import (replace|merge); settings; system; relay setup helpers
+  (`setup-script`, `dns-check`); and a WebSocket `/api/ws` streaming events,
+  status, health and config-version changes. Authentication: an argon2id
+  management password (`latchd auth set-password`) → session cookie (HttpOnly,
+  SameSite=Strict) + CSRF token; mutations require the CSRF token when auth is
+  on, cross-origin mutations are always refused, logins are rate-limited, and the
+  API refuses to bind a non-loopback address without a password. `docs/openapi.yaml`
+  (OpenAPI 3) is kept in lockstep with the code by a test that fails if the
+  registered routes and documented paths diverge (the CI check). Verified with the
+  real binary: unauthenticated → 401, login → 200, mutation without CSRF → 403,
+  with CSRF → 201, `/api/system` always open. See docs/DEV.md.
 - Phase 7: observability. `latchd/internal/events` is a unified event hub — every
   AccessEvent (local or relay) flows through one sink into an in-memory ring (for
   live `--follow`) and a SQLite store (for query and dashboards), with async

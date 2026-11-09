@@ -231,6 +231,26 @@ Decisions, assumptions and backlog. Newest first within each section.
   deferred: size-based retention bounds disk, and the async queue drops under
   burst with a counter. Sampling can be added later. Backlog.
 
+- 2026-11-09 — (Faz 8) Full management API on latchd: config (get/versions/diff/
+  rollback/validate), backup (export/import replace|merge), settings, system,
+  relay setup-script + dns-check, and a WebSocket `/api/ws` (events + status +
+  health + config-version). `POST /api/config/validate` is the dry-run: field
+  errors + affected routes, nothing saved.
+- 2026-11-09 — (Faz 8) Auth: management password as argon2id (1 pass / 64 MiB /
+  4 lanes) in settings.auth.passwordHash; `latchd auth set-password`. Login →
+  session cookie (HttpOnly, SameSite=Strict, 24h — decision point) + a CSRF
+  token. Mutations require the CSRF token (header) when auth is on; cross-origin
+  mutations are always refused via the Origin check (protects loopback too).
+  Login is rate-limited to 5/min per IP. The API refuses a non-loopback bind
+  unless a password is set (daemon won't start and says why).
+- 2026-11-09 — (Faz 8) OpenAPI 3 at docs/openapi.yaml, kept in lockstep with the
+  code by TestOpenAPIMatchesRoutes (registered routes == documented paths), which
+  is the ROADMAP "OpenAPI matches code (CI check)" DoD. The route table drives
+  both registration and the test.
+- 2026-11-09 — (Faz 8) WebSocket via github.com/coder/websocket; OriginPatterns
+  limited to localhost/127.0.0.1. Settings PUT never returns or clobbers the
+  password hash (GET omits it; PUT without it preserves it).
+
 ## Backlog
 
 - High-traffic AccessEvent sampling threshold. Faz 7 deferred.

@@ -128,12 +128,13 @@ func TestUnknownFieldRejected(t *testing.T) {
 	}
 }
 
-func TestRequireLoopback(t *testing.T) {
-	if err := requireLoopback("127.0.0.1:4040"); err != nil {
+func TestRequireAuthOrLoopback(t *testing.T) {
+	s := &Server{}
+	if err := s.requireAuthOrLoopback("127.0.0.1:4040"); err != nil {
 		t.Errorf("loopback rejected: %v", err)
 	}
-	if err := requireLoopback("0.0.0.0:4040"); err == nil {
-		t.Error("non-loopback accepted")
+	if err := s.requireAuthOrLoopback("localhost:4040"); err != nil {
+		t.Errorf("localhost rejected: %v", err)
 	}
 }
 

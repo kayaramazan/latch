@@ -43,6 +43,8 @@ func main() {
 		err = cli.Route(args)
 	case "status":
 		err = cli.Status(args)
+	case "auth":
+		err = cli.Auth(args)
 	case "events":
 		err = cli.Events(args)
 	case "explain":
@@ -76,6 +78,7 @@ Usage:
   latchd route list
   latchd route rm <route-id>
   latchd status
+  latchd auth set-password
   latchd events [--follow] [--route ID] [-n N]
   latchd explain --route ID --ip IP [--path /x]
   latchd version

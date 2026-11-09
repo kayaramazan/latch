@@ -384,28 +384,28 @@ hesapları; explain tablo testleri; metrics endpoint'inde beklenen seriler.
 şekilde tamamlamak.
 
 **Teslimatlar**
-- [ ] `docs/API.md`'deki tüm kaynaklar: routes, ip-policies, rate-limits,
+- [x] `docs/API.md`'deki tüm kaynaklar: routes, ip-policies, rate-limits,
       relays (token ile ekle, durum, sync durumu), config/versions (liste,
       diff, rollback), backup (export/import), events (sorgu), stats (pano
       verileri), explain, settings, system (sürüm, sağlık).
-- [ ] Dry-run: `POST /api/config/validate` → alan hataları + etkilenen
+- [x] Dry-run: `POST /api/config/validate` → alan hataları + etkilenen
       route'lar (UI "uygula" öncesi gösterir).
-- [ ] Relay kurulum desteği: `POST /api/relays/setup-script` (install.sh
+- [x] Relay kurulum desteği: `POST /api/relays/setup-script` (install.sh
       komutu üretir), `POST /api/relays/dns-check`.
-- [ ] WS `/api/ws`: canlı olaylar, durum değişiklikleri (tünel, health, sync),
+- [x] WS `/api/ws`: canlı olaylar, durum değişiklikleri (tünel, health, sync),
       config versiyonu değişti bildirimi.
-- [ ] Kimlik doğrulama: parola veya token → oturum çerezi; loopback dışına
+- [x] Kimlik doğrulama: parola veya token → oturum çerezi; loopback dışına
       bağlanınca zorunlu (aksi halde daemon başlamaz ve nedenini söyler);
       giriş denemesi rate limit; CSRF koruması; `latchd auth set-password`.
-- [ ] OpenAPI 3 dokümanı (`docs/openapi.yaml`) ve CLI'nin tamamen API
+- [x] OpenAPI 3 dokümanı (`docs/openapi.yaml`) ve CLI'nin tamamen API
       üzerinden çalışması.
 
 **Testler:** httptest ile her endpoint; auth zorunluluğu; CSRF; WS olay
 akışı; validate → affected routes.
 
 **DoD**
-- [ ] OpenAPI ile kod eşleşiyor (CI'da kontrol).
-- [ ] Loopback dışı dinleme parola olmadan reddediliyor.
+- [x] OpenAPI ile kod eşleşiyor (CI'da kontrol).
+- [x] Loopback dışı dinleme parola olmadan reddediliyor.
 
 **Karar noktaları:** oturum süresi; parola hash (argon2id öneri).
 

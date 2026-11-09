@@ -1,0 +1,425 @@
+openapi: 3.0.3
+info:
+  title: Latch agent (latchd) management API
+  version: 0.1.0
+  description: >-
+    Local management API for the Latch agent. Loopback-only unless a
+    management password is set. Mutating requests require a session and a
+    CSRF token when authentication is enabled; cross-origin mutations are
+    always refused.
+servers:
+  - url: http://127.0.0.1:4040
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: latch_session
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: {type: string}
+    Object:
+      type: object
+      additionalProperties: true
+security:
+  - sessionCookie: []
+paths:
+  /api/auth/login:
+    post:
+      summary: POST /api/auth/login
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/auth/logout:
+    post:
+      summary: POST /api/auth/logout
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/auth/me:
+    get:
+      summary: GET /api/auth/me
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/status:
+    get:
+      summary: GET /api/status
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /metrics:
+    get:
+      summary: GET /metrics
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/events:
+    get:
+      summary: GET /api/events
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/events/stream:
+    get:
+      summary: GET /api/events/stream
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/dashboard:
+    get:
+      summary: GET /api/dashboard
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/explain:
+    post:
+      summary: POST /api/explain
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/routes:
+    get:
+      summary: GET /api/routes
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+    post:
+      summary: POST /api/routes
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/routes/{id}:
+    get:
+      summary: GET /api/routes/{id}
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+    put:
+      summary: PUT /api/routes/{id}
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+    delete:
+      summary: DELETE /api/routes/{id}
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/ip-policies:
+    get:
+      summary: GET /api/ip-policies
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+    post:
+      summary: POST /api/ip-policies
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/ip-policies/{id}:
+    delete:
+      summary: DELETE /api/ip-policies/{id}
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/rate-limits:
+    get:
+      summary: GET /api/rate-limits
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+    post:
+      summary: POST /api/rate-limits
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/rate-limits/{id}:
+    delete:
+      summary: DELETE /api/rate-limits/{id}
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/config:
+    get:
+      summary: GET /api/config
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/config/versions:
+    get:
+      summary: GET /api/config/versions
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/config/versions/{n}:
+    get:
+      summary: GET /api/config/versions/{n}
+      parameters:
+        - {name: n, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/config/diff:
+    get:
+      summary: GET /api/config/diff
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/config/rollback/{n}:
+    post:
+      summary: POST /api/config/rollback/{n}
+      parameters:
+        - {name: n, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/config/validate:
+    post:
+      summary: POST /api/config/validate
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/backup:
+    get:
+      summary: GET /api/backup
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+    post:
+      summary: POST /api/backup
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/settings:
+    get:
+      summary: GET /api/settings
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+    put:
+      summary: PUT /api/settings
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/system:
+    get:
+      summary: GET /api/system
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/relays/setup-script:
+    post:
+      summary: POST /api/relays/setup-script
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/relays/dns-check:
+    post:
+      summary: POST /api/relays/dns-check
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/ws:
+    get:
+      summary: GET /api/ws
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/relays:
+    get:
+      summary: GET /api/relays
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+    post:
+      summary: POST /api/relays
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+  /api/relays/{id}:
+    get:
+      summary: GET /api/relays/{id}
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+    put:
+      summary: PUT /api/relays/{id}
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}
+    delete:
+      summary: DELETE /api/relays/{id}
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Object'}}}}
+        '400': {description: Bad request, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {description: Authentication required}
+        '403': {description: Forbidden (CSRF or cross-origin)}

@@ -27,14 +27,16 @@ type StatusProvider interface {
 
 // Server is the management HTTP API.
 type Server struct {
-	store   *store.Store
-	tun     StatusProvider
-	events  *events.Store
-	log     *slog.Logger
-	version string
-	mux     *http.ServeMux
-	health  func() map[string]string
-	metrics http.Handler
+	store    *store.Store
+	tun      StatusProvider
+	events   *events.Store
+	log      *slog.Logger
+	version  string
+	mux      *http.ServeMux
+	health   func() map[string]string
+	metrics  http.Handler
+	sessions *sessionStore
+	logins   *loginLimiter
 }
 
 // SetHealth installs an upstream-health provider (local mode).
@@ -48,48 +50,94 @@ func New(st *store.Store, tun StatusProvider, ev *events.Store, version string, 
 	if log == nil {
 		log = slog.Default()
 	}
-	s := &Server{store: st, tun: tun, events: ev, log: log, version: version, mux: http.NewServeMux()}
+	s := &Server{store: st, tun: tun, events: ev, log: log, version: version, mux: http.NewServeMux(),
+		sessions: newSessionStore(), logins: newLoginLimiter()}
 	s.routes()
 	return s
 }
 
-// Handler exposes the mux (for tests).
-func (s *Server) Handler() http.Handler { return s.mux }
+// Handler exposes the guarded mux (for tests).
+func (s *Server) Handler() http.Handler { return s.guard(s.mux) }
 
 func (s *Server) routes() {
-	s.mux.HandleFunc("GET /api/status", s.getStatus)
-	s.mux.HandleFunc("GET /metrics", s.serveMetrics)
-	s.mux.HandleFunc("GET /api/events", s.getEvents)
-	s.mux.HandleFunc("GET /api/events/stream", s.streamEvents)
-	s.mux.HandleFunc("GET /api/dashboard", s.getDashboard)
-	s.mux.HandleFunc("POST /api/explain", s.postExplain)
-	s.mux.HandleFunc("GET /api/routes", s.listRoutes)
-	s.mux.HandleFunc("POST /api/routes", s.createRoute)
-	s.mux.HandleFunc("GET /api/routes/{id}", s.getRoute)
-	s.mux.HandleFunc("PUT /api/routes/{id}", s.updateRoute)
-	s.mux.HandleFunc("DELETE /api/routes/{id}", s.deleteRoute)
-	s.mux.HandleFunc("GET /api/ip-policies", s.listIPPolicies)
-	s.mux.HandleFunc("POST /api/ip-policies", s.createIPPolicy)
-	s.mux.HandleFunc("DELETE /api/ip-policies/{id}", s.deleteIPPolicy)
-	s.mux.HandleFunc("GET /api/rate-limits", s.listRateLimits)
-	s.mux.HandleFunc("POST /api/rate-limits", s.createRateLimit)
-	s.mux.HandleFunc("DELETE /api/rate-limits/{id}", s.deleteRateLimit)
-	s.mux.HandleFunc("GET /api/relays", s.listRelays)
-	s.mux.HandleFunc("POST /api/relays", s.createRelay)
-	s.mux.HandleFunc("GET /api/relays/{id}", s.getRelay)
-	s.mux.HandleFunc("PUT /api/relays/{id}", s.updateRelay)
-	s.mux.HandleFunc("DELETE /api/relays/{id}", s.deleteRelay)
+	for _, rt := range s.routeTable() {
+		s.mux.HandleFunc(rt.method+" "+rt.pattern, rt.h)
+	}
+}
+
+type routeDef struct {
+	method  string
+	pattern string
+	h       http.HandlerFunc
+}
+
+func (s *Server) routeTable() []routeDef {
+	return []routeDef{
+		{"POST", "/api/auth/login", s.login},
+		{"POST", "/api/auth/logout", s.logout},
+		{"GET", "/api/auth/me", s.authMe},
+		{"GET", "/api/status", s.getStatus},
+		{"GET", "/metrics", s.serveMetrics},
+		{"GET", "/api/events", s.getEvents},
+		{"GET", "/api/events/stream", s.streamEvents},
+		{"GET", "/api/dashboard", s.getDashboard},
+		{"POST", "/api/explain", s.postExplain},
+		{"GET", "/api/routes", s.listRoutes},
+		{"POST", "/api/routes", s.createRoute},
+		{"GET", "/api/routes/{id}", s.getRoute},
+		{"PUT", "/api/routes/{id}", s.updateRoute},
+		{"DELETE", "/api/routes/{id}", s.deleteRoute},
+		{"GET", "/api/ip-policies", s.listIPPolicies},
+		{"POST", "/api/ip-policies", s.createIPPolicy},
+		{"DELETE", "/api/ip-policies/{id}", s.deleteIPPolicy},
+		{"GET", "/api/rate-limits", s.listRateLimits},
+		{"POST", "/api/rate-limits", s.createRateLimit},
+		{"DELETE", "/api/rate-limits/{id}", s.deleteRateLimit},
+		{"GET", "/api/config", s.getConfig},
+		{"GET", "/api/config/versions", s.listVersions},
+		{"GET", "/api/config/versions/{n}", s.getVersion},
+		{"GET", "/api/config/diff", s.getDiff},
+		{"POST", "/api/config/rollback/{n}", s.rollback},
+		{"POST", "/api/config/validate", s.validateConfig},
+		{"GET", "/api/backup", s.exportBackup},
+		{"POST", "/api/backup", s.importBackup},
+		{"GET", "/api/settings", s.getSettings},
+		{"PUT", "/api/settings", s.updateSettings},
+		{"GET", "/api/system", s.getSystem},
+		{"POST", "/api/relays/setup-script", s.relaySetupScript},
+		{"POST", "/api/relays/dns-check", s.relayDNSCheck},
+		{"GET", "/api/ws", s.serveWS},
+		{"GET", "/api/relays", s.listRelays},
+		{"POST", "/api/relays", s.createRelay},
+		{"GET", "/api/relays/{id}", s.getRelay},
+		{"PUT", "/api/relays/{id}", s.updateRelay},
+		{"DELETE", "/api/relays/{id}", s.deleteRelay},
+	}
+}
+
+// Patterns returns the distinct API paths (method-agnostic), used by the
+// OpenAPI coverage test.
+func (s *Server) Patterns() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, rt := range s.routeTable() {
+		if !seen[rt.pattern] {
+			seen[rt.pattern] = true
+			out = append(out, rt.pattern)
+		}
+	}
+	return out
 }
 
 // ListenAndServe binds addr (which must be loopback while auth is disabled)
 // and serves until ctx is cancelled.
 func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
-	if err := requireLoopback(addr); err != nil {
+	if err := s.requireAuthOrLoopback(addr); err != nil {
 		return err
 	}
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           s.mux,
+		Handler:           s.guard(s.mux),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	ln, err := net.Listen("tcp", addr)
@@ -109,8 +157,9 @@ func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
 	return nil
 }
 
-// requireLoopback refuses non-loopback binds while there is no authentication.
-func requireLoopback(addr string) error {
+// requireAuthOrLoopback refuses a non-loopback bind unless a management
+// password is set, so the API is never exposed unauthenticated.
+func (s *Server) requireAuthOrLoopback(addr string) error {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return fmt.Errorf("api: invalid listen address %q: %w", addr, err)
@@ -118,11 +167,13 @@ func requireLoopback(addr string) error {
 	if host == "localhost" {
 		return nil
 	}
-	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsLoopback() {
-		return fmt.Errorf("api: refusing to bind %q: the management API has no authentication yet and must stay on loopback", addr)
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return nil
 	}
-	return nil
+	if s.authEnabled() {
+		return nil
+	}
+	return fmt.Errorf("api: refusing to bind %q without a password: run `latchd auth set-password` first (the management API would be unauthenticated)", addr)
 }
 
 // --- handlers ---
