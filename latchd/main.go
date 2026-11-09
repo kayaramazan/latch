@@ -14,6 +14,7 @@ import (
 	"github.com/kayaramazan/latch/latchd/internal/api"
 	"github.com/kayaramazan/latch/latchd/internal/cli"
 	"github.com/kayaramazan/latch/latchd/internal/config"
+	"github.com/kayaramazan/latch/latchd/internal/local"
 	"github.com/kayaramazan/latch/latchd/internal/store"
 	"github.com/kayaramazan/latch/latchd/internal/tunnel"
 )
@@ -116,13 +117,49 @@ func run(args []string) error {
 		mgr.Run(ctx)
 	}()
 
+	// Local reverse-proxy mode (embedded Caddy). It only starts Caddy once a
+	// local route exists, so tunnel-only installs bind nothing extra.
+	snap, _ := st.Current()
+	localMgr := local.NewManager(local.Deps{
+		Store: st,
+		Emit:  mgr.Events().Append,
+		Options: local.Options{
+			HTTPPort:   snap.Settings.LocalMode.HTTPPort,
+			HTTPSPort:  snap.Settings.LocalMode.HTTPSPort,
+			Issuer:     local.IssuerACME,
+			HTTP3:      snap.Settings.LocalMode.HTTP3,
+			StorageDir: paths.CaddyDir,
+			ACMECA:     acmeDirectoryFor(snap.Settings.LocalMode.ACMECA),
+		},
+		Trusted: snap.Settings.TrustedProxies,
+		Logger:  logger,
+	})
+	localDone := make(chan struct{})
+	go func() {
+		defer close(localDone)
+		localMgr.Run(ctx)
+	}()
+
 	srv := api.New(st, mgr, Version, logger)
+	srv.SetHealth(localMgr.Health)
 	err = srv.ListenAndServe(ctx, listen)
 
 	<-mgrDone
+	<-localDone
 	if err != nil {
 		return err
 	}
 	logger.Info("latchd stopped")
 	return nil
+}
+
+// acmeDirectoryFor maps a settings ACME CA choice to a directory URL override
+// ("" => Caddy's default Let's Encrypt/ZeroSSL).
+func acmeDirectoryFor(ca string) string {
+	switch ca {
+	case "letsencrypt-staging":
+		return "https://acme-staging-v02.api.letsencrypt.org/directory"
+	default:
+		return ""
+	}
 }

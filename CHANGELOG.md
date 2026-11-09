@@ -5,6 +5,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Phase 6: local mode — embedded Caddy + the same policies on the agent. The
+  one `latchd` binary can now be a TLS reverse proxy on a public-IP server
+  without writing Caddy config. `latchd/internal/local`: a model→Caddy-JSON
+  generator (reverse_proxy, path routing, auto TLS via ACME or Caddy's internal
+  CA, custom cert files, health checks, HTTP/3) with structure/golden tests;
+  Caddy v2 embedded as a library (standard bundle + filestorage), applied with
+  `caddy.Load` (zero-downtime; the previous config survives an error and the
+  daemon never crashes); a custom `latch_policy` Caddy handler that runs the
+  shared /policy engine and emits local AccessEvents; an upstream health checker
+  for both modes (status in /api/status); and listen-port conflict detection.
+  `latchd route add --local --hostname … --target …`. Verified end to end: an
+  HTTPS local site served via Caddy's internal CA (certificate verified, not
+  skipped), response header rules applied, and the same IP policy that the relay
+  enforces denying a request (403) with a local AccessEvent — "one policy, same
+  result in both modes". See docs/DEV.md.
 - Phase 5: relay policies (IP, GeoIP, rate limit, headers) + PolicySync +
   AccessEvent. Shared `/policy` package: trusted-proxy client-IP resolution,
   IP/CIDR and GeoIP (MaxMind mmdb) allow/deny with a documented global/route

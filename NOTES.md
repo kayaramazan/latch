@@ -177,7 +177,38 @@ Decisions, assumptions and backlog. Newest first within each section.
   exist in the store for PolicySync. Full policy management UI is Faz 9; rate
   limiter memory cap is `DefaultMaxRateKeys` (100k), configurable later.
 
+- 2026-11-09 — (Faz 6) latchd local mode embeds Caddy v2 as a library. Modules
+  come from the `standard` bundle plus `filestorage` (the standard bundle omits
+  the file-system storage module); the custom `latch_policy` handler
+  (`http.handlers.latch_policy`) wraps the shared /policy engine and emits local
+  AccessEvents (source=local, where=agent). Config is generated as Caddy JSON
+  (deterministic: Go sorts map keys) and applied with `caddy.Load` (zero-downtime;
+  Caddy keeps the previous config on error and the daemon never crashes).
+- 2026-11-09 — (Faz 6) The latch_policy handler reads a global `Runtime`
+  (engine + event sink) that the manager swaps atomically on each config change,
+  so Caddy need not re-provision the module when policies change.
+- 2026-11-09 — (Faz 6) Caddy only starts once a local route exists, so
+  tunnel-only installs never bind :80/:443. Caddy data dir = `<data>/caddy`
+  (decision point). HTTP/3 default ON via settings.localMode.http3 (decision
+  point) → server protocols h1/h2/h3.
+- 2026-11-09 — (Faz 6) The same /policy engine runs in both modes; the relay
+  integration test and the local integration test both deny 127.0.0.0/8 → 403
+  from one policy table, satisfying the "same policy, same result" DoD.
+- 2026-11-09 — (Faz 6) Upstream health checker runs on the agent for both modes
+  (TCP connect, or HTTP GET when a path is set); status (healthy/unhealthy/
+  unknown) in `/api/status`.
+- 2026-11-09 — (Faz 6) `tls: off` (plain-HTTP local routes) is deferred: the
+  generator skips them. A local reverse proxy's point is easy HTTPS; mixing a
+  plain :80 host with Caddy's auto HTTP->HTTPS redirect server needs more care.
+  Backlog.
+- 2026-11-09 — (Faz 6) Caddy's own logs are set to ERROR level and are not yet
+  routed through slog (they go to stderr). A zapcore->slog bridge is a backlog
+  refinement; the agent's own logs already use slog.
+
 ## Backlog
+
+- Local mode `tls: off` (plain-HTTP routes). Faz 6 deferred.
+- Bridge Caddy's zap logs into slog (zapcore). Faz 6 deferred.
 
 - gRPC / h2c end-to-end through the tunnel (needs HTTP/2 to the agent). v1+.
 - OS keychain for agent-side secrets. v1+.

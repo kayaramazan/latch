@@ -314,20 +314,20 @@ rate limit bellek sınırı.
 config'i göstermeden, TLS'li reverse proxy olması.
 
 **Teslimatlar**
-- [ ] `latchd/internal/local`: model → Caddy JSON üretici (HTTP app,
+- [x] `latchd/internal/local`: model → Caddy JSON üretici (HTTP app,
       otomatik TLS/ACME, HTTP→HTTPS, reverse_proxy, path bazlı yönlendirme,
       header kuralları, WebSocket, `tls: custom` için sertifika dosyası,
       `tls: off`); golden test dosyaları.
-- [ ] Caddy'yi kütüphane olarak gömme (`caddy.Run`/`caddy.Load`), yalnızca
+- [x] Caddy'yi kütüphane olarak gömme (`caddy.Run`/`caddy.Load`), yalnızca
       gereken modüller derlenir; Caddy loglarını slog'a köprüleme.
-- [ ] Özel Caddy HTTP handler modülü `latch_policy`: `/policy` motorunu
+- [x] Özel Caddy HTTP handler modülü `latch_policy`: `/policy` motorunu
       sarar, AccessEvent üretir (kaynak=local).
-- [ ] Sıfır kesintili uygulama: doğrula → etkilenen route'lar → `caddy.Load`;
+- [x] Sıfır kesintili uygulama: doğrula → etkilenen route'lar → `caddy.Load`;
       hata durumunda önceki config korunur, Caddy hatası alan düzeyine
       (`FieldError`) eşlenir, daemon asla düşmez.
-- [ ] Upstream health checker (her iki mod için; ajan tarafında çalışır):
+- [x] Upstream health checker (her iki mod için; ajan tarafında çalışır):
       aralık, zaman aşımı, durum (`healthy/unhealthy/unknown`) API'de.
-- [ ] `latchd` dinleme adresi/port çakışması tespiti ve anlaşılır hata.
+- [x] `latchd` dinleme adresi/port çakışması tespiti ve anlaşılır hata.
 
 **Testler:** golden JSON testleri; entegrasyon: rastgele portta Caddy
 (internal/local CA) + yerel upstream → HTTPS istek; path yönlendirme; header
@@ -336,9 +336,9 @@ kullanılır); hatalı config uygulanmaz, önceki çalışmaya devam eder; healt
 check durum geçişleri.
 
 **DoD**
-- [ ] CLI ile `route add --local --hostname site.example.com --target
+- [x] CLI ile `route add --local --hostname site.example.com --target
       127.0.0.1:8080` → geçerli TLS'li site (test ortamında Pebble/internal CA).
-- [ ] Tek politika tanımı iki yerde aynı sonucu veriyor (ortak test tablosu).
+- [x] Tek politika tanımı iki yerde aynı sonucu veriyor (ortak test tablosu).
 
 **Karar noktaları:** HTTP/3 varsayılan açık mı; Caddy veri dizini konumu.
 

@@ -273,3 +273,35 @@ rules. `go test ./latch-relay/internal/policies/` covers persistence across a
 restart. `go test ./latch-relay/internal/relay/ -run TestPolicy` is the
 integration test: a denied IP gets 403 and never reaches the agent, the agent
 receives the AccessEvent, and a rate limit returns 429 with Retry-After.
+
+## Phase 6 — local mode (embedded Caddy)
+
+The same `latchd` binary can run on a public-IP server as a TLS reverse proxy,
+with no Caddy config to write. Local routes are served by an embedded Caddy and
+go through the same `/policy` engine as tunnel routes.
+
+```sh
+# Expose a local service with automatic HTTPS (Let's Encrypt on a real server):
+latchd route add --local --hostname site.example.com --target 127.0.0.1:8080
+latchd route list        # EXPOSURE=local
+```
+
+Caddy starts only once a local route exists (tunnel-only installs bind no extra
+ports). The data/cert directory is `<data-dir>/caddy`. HTTP/3 is on by default
+(`settings.localMode.http3`). `latchd status`/`/api/status` reports upstream
+health for routes with health checks enabled.
+
+Policies work identically in both modes — bind an IP policy or rate limit to a
+local route exactly as for a tunnel route, and `latchd events` shows local
+decisions (`where=agent`, `source=local`).
+
+### What the local-mode tests cover
+
+`go test ./latchd/internal/local/` runs: generator structure/golden tests (the
+Caddy JSON for a route has the right host, upstream, `latch_policy` handler,
+issuer, path matcher and health check), and an end-to-end integration test that
+embeds Caddy with its **internal CA**, serves a local upstream over real HTTPS
+(the test trusts the internal CA — verification is never skipped), applies a
+response-header rule, then binds an IP policy and confirms the request is denied
+with a 403 and a local AccessEvent. The `tls: off` (plain-HTTP) mode is deferred
+(see NOTES).

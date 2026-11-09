@@ -36,18 +36,18 @@ func routeAdd(args []string) error {
 	fs.Var(&hostnames, "hostname", "public hostname (repeatable, or comma-separated)")
 	name := fs.String("name", "", "display name (default: first hostname)")
 	path := fs.String("path", "", "path prefix (default /)")
+	localMode := fs.Bool("local", false, "serve locally with embedded Caddy (public-IP server) instead of a tunnel")
 	apiFlag := fs.String("api", "", "latchd API base URL")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *target == "" || *relayRef == "" || len(hostnames) == 0 {
-		return fmt.Errorf("--target, --tunnel and at least one --hostname are required")
+	if *target == "" || len(hostnames) == 0 {
+		return fmt.Errorf("--target and at least one --hostname are required")
+	}
+	if !*localMode && *relayRef == "" {
+		return fmt.Errorf("--tunnel <relay> is required (or use --local)")
 	}
 	c := newAPIClient(*apiFlag)
-	relayID, err := resolveRelay(c, *relayRef)
-	if err != nil {
-		return err
-	}
 	displayName := *name
 	if displayName == "" {
 		displayName = hostnames[0]
@@ -55,10 +55,18 @@ func routeAdd(args []string) error {
 	in := routeInput{
 		Name:      ptr(displayName),
 		Target:    ptr(*target),
-		Exposure:  ptr(model.ExposureTunnel),
 		Kind:      ptr(model.KindHTTP),
-		RelayID:   ptr(relayID),
 		Hostnames: ptr([]string(hostnames)),
+	}
+	if *localMode {
+		in.Exposure = ptr(model.ExposureLocal)
+	} else {
+		relayID, err := resolveRelay(c, *relayRef)
+		if err != nil {
+			return err
+		}
+		in.Exposure = ptr(model.ExposureTunnel)
+		in.RelayID = ptr(relayID)
 	}
 	if *path != "" {
 		in.PathPrefix = ptr(*path)

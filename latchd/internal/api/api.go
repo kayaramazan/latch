@@ -31,7 +31,11 @@ type Server struct {
 	log     *slog.Logger
 	version string
 	mux     *http.ServeMux
+	health  func() map[string]string
 }
+
+// SetHealth installs an upstream-health provider (local mode).
+func (s *Server) SetHealth(fn func() map[string]string) { s.health = fn }
 
 // New builds the API server.
 func New(st *store.Store, tun StatusProvider, version string, log *slog.Logger) *Server {
@@ -161,11 +165,15 @@ func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getStatus(w http.ResponseWriter, _ *http.Request) {
 	_, version := s.store.Current()
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"version":       s.version,
 		"configVersion": version,
 		"relays":        s.tun.Status(),
-	})
+	}
+	if s.health != nil {
+		resp["health"] = s.health()
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) listRoutes(w http.ResponseWriter, _ *http.Request) {
