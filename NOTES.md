@@ -273,6 +273,21 @@ Decisions, assumptions and backlog. Newest first within each section.
   in CI (needs a browser; not run in this dev environment). The add-route flow,
   UI serving + SPA fallback, and same-origin API were verified by hand.
 
+- 2026-11-09 — (Faz S0) SaaS design gate closed. Docs: SAAS_ARCHITECTURE,
+  SAAS_DATA_MODEL (Postgres), SAAS_THREAT_MODEL, SAAS_PRICING. Decisions (user
+  approved): billing via **Merchant-of-Record** (Paddle/LemonSqueezy — they
+  carry VAT/tax); auth **email+password (argon2id) + optional TOTP MFA** (OAuth
+  later); certs **regional wildcard** (`*.eu.latch.app`, subdomains free) +
+  **on-demand custom domains** (phase-4 permission fn); compliance **GDPR+KVKK
+  baseline, single region EU** (multi-region residency v2). Tenant isolation =
+  logical `account_id` scoping (+ optional PG RLS) plus relay per-token
+  isolation. The new **relay control API** is the scoped relaxation of the
+  CLI-only rule: mTLS, private, flag-gated off for self-hosted. S1 implements it.
+- 2026-11-09 — (Faz S0) Recommendation on sequencing, for the record: skip Faz 10
+  (Electron — irrelevant to managed SaaS); do S0 now (done), then fold Faz 11
+  (packaging) + Faz 12 (security review/hardening) in as the launch gate, then
+  S1→S3. A security review is a prerequisite before onboarding paying users.
+
 ## Backlog
 
 - latch-ui code-splitting (Recharts) to shrink the main bundle. Faz 9 deferred.

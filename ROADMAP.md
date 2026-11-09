@@ -550,29 +550,34 @@ kapalı kalır, CLI ile yönetim devam eder).
 **Amaç:** Kod yazmadan, SaaS'ın ürün ve mimari kararlarını kapatmak.
 
 **Teslimatlar**
-- [ ] `docs/SAAS_ARCHITECTURE.md`: bileşenler (`latch-control`, relay filosu,
+- [x] `docs/SAAS_ARCHITECTURE.md`: bileşenler (`latch-control`, relay filosu,
       ajan), veri akışı, güven sınırları, dağıtım topolojisi.
-- [ ] `docs/SAAS_DATA_MODEL.md`: Account → User (rol) → Project →
+- [x] `docs/SAAS_DATA_MODEL.md`: Account → User (rol) → Project →
       Token/Domain/Route; plan/kota/kullanım/fatura tabloları (Postgres).
-- [ ] `docs/SAAS_THREAT_MODEL.md`: kiracı izolasyonu, kötüye kullanım
+- [x] `docs/SAAS_THREAT_MODEL.md`: kiracı izolasyonu, kötüye kullanım
       (phishing/malware barındırma), DMCA/abuse akışı, TLS-terminasyon
       sorumluluğu, sır yönetimi.
-- [ ] Fiyatlandırma/plan taslağı (ücretsiz/pro/takım; kota boyutları).
+- [x] Fiyatlandırma/plan taslağı (`docs/SAAS_PRICING.md`; ücretsiz/pro/takım).
 
 **DoD**
-- [ ] Aşağıdaki **karar noktaları** kullanıcı onayıyla kapandı; S1 başlayabilir.
+- [x] **Karar noktaları** kullanıcı onayıyla kapandı (2026-11-09); S1 başlayabilir.
 
 **Karar noktaları (S0'da kapatılır)**
 - [x] **Model çatalı:** → **(a) yönetilen relay** seçildi (2026-11-09): operatör
       relay filosunu barındırır, tam SaaS (ngrok benzeri). Metering operatörün
       kendi relay'lerinden gelir (güvenilir); yerleştirme kontrol düzleminde.
-- [ ] Auth yığını (e-posta+parola, OAuth, MFA), oturum vs API anahtarı.
-- [ ] Faturalama sağlayıcı (öneri: **Stripe**; abonelik + kullanım aşımı).
-- [ ] Kiracı izolasyon modeli (mantıksal `account_id` kapsamı vs relay/kiracı
-      ayrımı), adil kullanım politikası.
-- [ ] Let's Encrypt ölçek stratejisi (çok sayıda özel alan adında rate-limit;
-      alt alanlar için ayrılmış ACME hesap havuzu / olası kendi ara CA'n).
-- [ ] Uyumluluk kapsamı (KVKK/GDPR, veri işleme sözleşmesi, veri ikametgâhı).
+- [x] Auth yığını → **e-posta+parola (argon2id) + opsiyonel TOTP MFA**, oturum
+      çerezi + API anahtarı; OAuth sonra. (2026-11-09)
+- [x] Faturalama → **Merchant-of-Record (Paddle/LemonSqueezy)**; KDV/vergi yükü
+      sağlayıcıda. Abonelik + kullanım aşımı. (2026-11-09)
+- [x] Kiracı izolasyonu → **mantıksal `account_id` kapsamı** (her satırda,
+      veri-erişim katmanında + opsiyonel PG RLS) + relay'de token izolasyonu;
+      bölgesel/relay ayrımı v2. Adil kullanım AUP'ta. (2026-11-09)
+- [x] Sertifika ölçeği → **bölge-başı wildcard** (`*.eu.latch.app`, alt alanlar
+      ACME harcamaz) + **özel alanlar on-demand** (Faz 4 izin fn, önbellekli);
+      kendi ara CA v2. (2026-11-09)
+- [x] Uyumluluk → **KVKK+GDPR temel** (ToS/AUP/Gizlilik/DPA, export+delete,
+      audit log), **tek bölge (EU)** başlangıç; çok-bölge ikametgâh v2. (2026-11-09)
 
 ---
 
