@@ -1,0 +1,36 @@
+{
+  "title": "Latch",
+  "schemaVersion": 39,
+  "editable": true,
+  "panels": [
+    {
+      "type": "timeseries", "title": "Requests/sec by decision",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"expr": "sum by (decision) (rate(latchd_requests_total[1m]))", "legendFormat": "{{decision}}"}]
+    },
+    {
+      "type": "timeseries", "title": "Request latency (p50/p95/p99)",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum(rate(latchd_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50"},
+        {"expr": "histogram_quantile(0.95, sum(rate(latchd_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95"},
+        {"expr": "histogram_quantile(0.99, sum(rate(latchd_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99"}
+      ]
+    },
+    {
+      "type": "timeseries", "title": "Denied/sec by reason",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [{"expr": "sum by (reason) (rate(latchd_denied_total[1m]))", "legendFormat": "{{reason}}"}]
+    },
+    {
+      "type": "stat", "title": "Connected relays",
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 8},
+      "targets": [{"expr": "latchd_tunnels_connected"}]
+    },
+    {
+      "type": "timeseries", "title": "Relay: requests by status (relay side)",
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 8},
+      "targets": [{"expr": "sum by (status) (rate(latch_relay_requests_total[1m]))", "legendFormat": "{{status}}"}]
+    }
+  ]
+}

@@ -5,6 +5,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Phase 7: observability. `latchd/internal/events` is a unified event hub — every
+  AccessEvent (local or relay) flows through one sink into an in-memory ring (for
+  live `--follow`) and a SQLite store (for query and dashboards), with async
+  batched writes and age+size retention that drops rather than crashes on a full
+  queue or disk trouble. Query by time range, route, IP, status, decision, reason
+  or text. Server-side dashboard aggregation (`/api/dashboard`): req/s, p50/p95/p99
+  latency, status classes, top routes, currently-blocked, top blocked IPs last
+  hour. `policy.Explain` traces a sample request through the rules (order, where,
+  result); `latchd explain` / `POST /api/explain`. latchd Prometheus `/metrics`
+  on the management API (requests, denials, per-route traffic, latency, tunnel and
+  health gauges). Structured JSON logs to a rotated file (`--log-file`). CLI:
+  `latchd events --follow --route`, `latchd explain`. `deploy/grafana/` ships a
+  scrape config and a sample dashboard. Verified with the real binaries: tunnel
+  and local requests share one source-tagged stream, `/api/dashboard` aggregates
+  them, and `/metrics` is scrapeable. See docs/DEV.md.
 - Phase 6: local mode — embedded Caddy + the same policies on the agent. The
   one `latchd` binary can now be a TLS reverse proxy on a public-IP server
   without writing Caddy config. `latchd/internal/local`: a model→Caddy-JSON

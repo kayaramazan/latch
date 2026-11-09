@@ -17,6 +17,7 @@ func Events(args []string) error {
 	fs := flag.NewFlagSet("events", flag.ContinueOnError)
 	follow := fs.Bool("follow", false, "stream new events as they arrive")
 	n := fs.Int("n", 50, "number of recent events to show")
+	route := fs.String("route", "", "filter by route id")
 	apiFlag := fs.String("api", "", "latchd API base URL")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -24,7 +25,11 @@ func Events(args []string) error {
 	c := newAPIClient(*apiFlag)
 	if !*follow {
 		var events []model.AccessEvent
-		if err := c.do("GET", fmt.Sprintf("/api/events?n=%d", *n), nil, &events); err != nil {
+		path := fmt.Sprintf("/api/events?n=%d", *n)
+		if *route != "" {
+			path += "&route=" + *route
+		}
+		if err := c.do("GET", path, nil, &events); err != nil {
 			return err
 		}
 		for _, ev := range events {
@@ -33,7 +38,11 @@ func Events(args []string) error {
 		return nil
 	}
 	// Follow: read the SSE stream.
-	req, err := http.NewRequest("GET", c.base+"/api/events/stream", nil)
+	streamPath := "/api/events/stream"
+	if *route != "" {
+		streamPath += "?route=" + *route
+	}
+	req, err := http.NewRequest("GET", c.base+streamPath, nil)
 	if err != nil {
 		return err
 	}
@@ -69,6 +78,10 @@ func formatEvent(ev model.AccessEvent) string {
 	if ev.Country != "" {
 		country = " " + ev.Country
 	}
-	return fmt.Sprintf("%s  %-18s %s%s  %s %s -> %d  %s",
-		ts, ev.Hostname, ev.ClientIP, country, dash(ev.Method), dash(ev.Path), ev.Status, decision)
+	src := string(ev.Source)
+	if src == "" {
+		src = "?"
+	}
+	return fmt.Sprintf("%s  [%-5s] %-18s %s%s  %s %s -> %d  %s",
+		ts, src, ev.Hostname, ev.ClientIP, country, dash(ev.Method), dash(ev.Path), ev.Status, decision)
 }

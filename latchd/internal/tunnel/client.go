@@ -69,7 +69,7 @@ type Client struct {
 	agentVersion string
 	log          *slog.Logger
 
-	events *EventBuffer
+	events EventSink
 
 	mu        sync.Mutex
 	specs     []tunnel.RouteSpec
@@ -97,7 +97,7 @@ type Client struct {
 
 // NewClient builds a client for one relay. Call SetRoutes before or after
 // Run; Run blocks until ctx is cancelled.
-func NewClient(relay model.Relay, agentID, agentVersion string, events *EventBuffer, log *slog.Logger) *Client {
+func NewClient(relay model.Relay, agentID, agentVersion string, events EventSink, log *slog.Logger) *Client {
 	if log == nil {
 		log = slog.Default()
 	}

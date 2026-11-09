@@ -150,3 +150,32 @@ func TestGeoMissingFlag(t *testing.T) {
 		t.Error("country rule without DB should not deny")
 	}
 }
+
+func TestExplainDeny(t *testing.T) {
+	deny := model.IPPolicy{ID: "pol_block", Rules: []model.IPRule{{Action: model.ActionDeny, CIDR: "203.0.113.0/24"}}}
+	e, _ := New(Options{Where: "relay"}, []model.IPPolicy{deny}, nil, map[string]Binding{"rt": {IPPolicyID: "pol_block"}})
+	ex := e.Explain("rt", Request{RemoteAddr: "203.0.113.9:1000"})
+	if ex.Result != "deny" || ex.RuleID != "pol_block" || ex.Where != "relay" {
+		t.Errorf("explanation = %+v", ex)
+	}
+	if ex.ClientIP != "203.0.113.9" {
+		t.Errorf("client ip = %q", ex.ClientIP)
+	}
+	var sawRoutePolicy bool
+	for _, st := range ex.Steps {
+		if st.Stage == "ip_policy:route" && st.Matched {
+			sawRoutePolicy = true
+		}
+	}
+	if !sawRoutePolicy {
+		t.Errorf("expected a matched route-policy step: %+v", ex.Steps)
+	}
+}
+
+func TestExplainAllow(t *testing.T) {
+	e, _ := New(Options{Where: "agent"}, nil, nil, map[string]Binding{"rt": {}})
+	ex := e.Explain("rt", Request{RemoteAddr: "8.8.8.8:1000"})
+	if ex.Result != "allow" {
+		t.Errorf("expected allow, got %+v", ex)
+	}
+}

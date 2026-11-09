@@ -9,14 +9,19 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/kayaramazan/latch/latchd/internal/api"
 	"github.com/kayaramazan/latch/latchd/internal/cli"
 	"github.com/kayaramazan/latch/latchd/internal/config"
+	"github.com/kayaramazan/latch/latchd/internal/events"
 	"github.com/kayaramazan/latch/latchd/internal/local"
+	agentmetrics "github.com/kayaramazan/latch/latchd/internal/metrics"
 	"github.com/kayaramazan/latch/latchd/internal/store"
 	"github.com/kayaramazan/latch/latchd/internal/tunnel"
+	"github.com/kayaramazan/latch/proto/model"
 )
 
 // Version is set at build time via -ldflags "-X main.Version=...".
@@ -40,6 +45,8 @@ func main() {
 		err = cli.Status(args)
 	case "events":
 		err = cli.Events(args)
+	case "explain":
+		err = cli.Explain(args)
 	case "version", "-v", "--version":
 		fmt.Println("latchd", Version)
 		return
@@ -69,7 +76,8 @@ Usage:
   latchd route list
   latchd route rm <route-id>
   latchd status
-  latchd events [--follow] [-n N]
+  latchd events [--follow] [--route ID] [-n N]
+  latchd explain --route ID --ip IP [--path /x]
   latchd version
 
 Subcommands other than run talk to a running daemon (default http://127.0.0.1:4040,
@@ -82,7 +90,7 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	logger := cli.NewLogger(cfg.LogLevel)
+	logger := cli.NewLogger(cfg)
 
 	paths, err := config.Resolve(cfg.DataDir)
 	if err != nil {
@@ -101,6 +109,16 @@ func run(args []string) error {
 		return err
 	}
 
+	snap0, _ := st.Current()
+	evStore, err := events.Open(filepath.Join(paths.LogDir, "events.db"),
+		events.Options{RetentionDays: snap0.Settings.Events.RetentionDays, MaxSizeMB: snap0.Settings.Events.MaxSizeMB}, logger)
+	if err != nil {
+		return err
+	}
+	defer evStore.Close()
+	metrics := agentmetrics.New()
+	sink := eventSink{metrics, evStore}
+
 	listen := cfg.Listen
 	if listen == "" {
 		snap, _ := st.Current()
@@ -110,7 +128,7 @@ func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	mgr := tunnel.NewManager(tunnel.Deps{Store: st, AgentID: agentID, AgentVersion: Version, Logger: logger})
+	mgr := tunnel.NewManager(tunnel.Deps{Store: st, AgentID: agentID, AgentVersion: Version, Events: sink, Logger: logger})
 	mgrDone := make(chan struct{})
 	go func() {
 		defer close(mgrDone)
@@ -122,7 +140,7 @@ func run(args []string) error {
 	snap, _ := st.Current()
 	localMgr := local.NewManager(local.Deps{
 		Store: st,
-		Emit:  mgr.Events().Append,
+		Emit:  sink.Append,
 		Options: local.Options{
 			HTTPPort:   snap.Settings.LocalMode.HTTPPort,
 			HTTPSPort:  snap.Settings.LocalMode.HTTPSPort,
@@ -140,8 +158,10 @@ func run(args []string) error {
 		localMgr.Run(ctx)
 	}()
 
-	srv := api.New(st, mgr, Version, logger)
+	srv := api.New(st, mgr, evStore, Version, logger)
 	srv.SetHealth(localMgr.Health)
+	srv.SetMetrics(metrics.Handler())
+	go updateAgentGauges(ctx, metrics, mgr, localMgr)
 	err = srv.ListenAndServe(ctx, listen)
 
 	<-mgrDone
@@ -161,5 +181,37 @@ func acmeDirectoryFor(ca string) string {
 		return "https://acme-staging-v02.api.letsencrypt.org/directory"
 	default:
 		return ""
+	}
+}
+
+// eventSink fans each AccessEvent out to every sink (metrics + durable store).
+type eventSink []interface {
+	Append(ev model.AccessEvent)
+}
+
+func (s eventSink) Append(ev model.AccessEvent) {
+	for _, x := range s {
+		x.Append(ev)
+	}
+}
+
+// updateAgentGauges refreshes Prometheus gauges from live state.
+func updateAgentGauges(ctx context.Context, m *agentmetrics.Metrics, mgr *tunnel.Manager, lm *local.Manager) {
+	t := time.NewTicker(5 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			connected := 0
+			for _, st := range mgr.Status() {
+				if st.State == tunnel.StateConnected {
+					connected++
+				}
+			}
+			m.SetTunnels(connected)
+			m.SetHealth(lm.Health())
+		}
 	}
 }

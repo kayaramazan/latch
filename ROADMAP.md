@@ -350,28 +350,28 @@ check durum geçişleri.
 sorgulanabilir ve ölçülebilir kılmak.
 
 **Teslimatlar**
-- [ ] `latchd/internal/events`: birleşik olay modeli (local + relay), halka
+- [x] `latchd/internal/events`: birleşik olay modeli (local + relay), halka
       tampon + SQLite olay deposu; saklama politikası (süre ve boyut); disk
       dolunca güvenli davranış (en eskiyi sil, uyarı olayı, asla çökme).
-- [ ] Yapısal JSON log (slog) + dosya rotasyonu; log arama/filtre
+- [x] Yapısal JSON log (slog) + dosya rotasyonu; log arama/filtre
       (zaman aralığı, route, IP, kod, neden, metin).
-- [ ] `latchd /metrics` (Prometheus): istek/sn, gecikme histogramı, kod
+- [x] `latchd /metrics` (Prometheus): istek/sn, gecikme histogramı, kod
       dağılımı, route başına trafik, tünel durumu ve yeniden bağlanma sayısı,
       politika engellemeleri, health check durumu.
-- [ ] Pano toplulaştırmaları (sunucu tarafı): istek/sn, p50/p95/p99, kod
+- [x] Pano toplulaştırmaları (sunucu tarafı): istek/sn, p50/p95/p99, kod
       dağılımı, route başına trafik, "şu an engellenenler", son 1 saat en çok
       engellenen IP'ler.
-- [ ] Explain aracı: route + örnek istek (IP, path, header) → kuralların
+- [x] Explain aracı: route + örnek istek (IP, path, header) → kuralların
       sırası, nerede çalışacağı (ajan/relay), sonuç; `/policy.Explain`
       üzerine.
-- [ ] CLI: `latchd events --follow --route x`, `latchd explain`.
+- [x] CLI: `latchd events --follow --route x`, `latchd explain`.
 
 **Testler:** saklama/boyut sınırı; disk dolu simülasyonu; percentile
 hesapları; explain tablo testleri; metrics endpoint'inde beklenen seriler.
 
 **DoD**
-- [ ] Tünel ve yerel istekler aynı akışta kaynak etiketiyle görülüyor.
-- [ ] Prometheus ile scrape edilip örnek panel (`deploy/grafana/`) çalışıyor.
+- [x] Tünel ve yerel istekler aynı akışta kaynak etiketiyle görülüyor.
+- [x] Prometheus ile scrape edilip örnek panel (`deploy/grafana/`) çalışıyor.
 
 **Karar noktaları:** varsayılan saklama (öneri: 7 gün / 500 MB); olay
 örnekleme eşiği yüksek trafikte.

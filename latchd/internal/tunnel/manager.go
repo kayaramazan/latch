@@ -19,6 +19,7 @@ type Deps struct {
 	Store        *store.Store
 	AgentID      string
 	AgentVersion string
+	Events       EventSink
 	Logger       *slog.Logger
 }
 
@@ -45,11 +46,8 @@ func NewManager(d Deps) *Manager {
 	if d.Logger == nil {
 		d.Logger = slog.Default()
 	}
-	return &Manager{deps: d, log: d.Logger, events: NewEventBuffer(DefaultEventBufferSize), clients: map[string]*handle{}}
+	return &Manager{deps: d, log: d.Logger, clients: map[string]*handle{}}
 }
-
-// Events returns the shared AccessEvent buffer (relay-pushed events).
-func (m *Manager) Events() *EventBuffer { return m.events }
 
 // Run reconciles clients with the store and keeps them running until ctx is
 // cancelled. It blocks.
@@ -118,7 +116,7 @@ func (m *Manager) reconcile(ctx context.Context, snap *model.Snapshot, version i
 			h.cancel()
 			delete(m.clients, id)
 		}
-		cl := NewClient(relay, m.deps.AgentID, m.deps.AgentVersion, m.events, m.log)
+		cl := NewClient(relay, m.deps.AgentID, m.deps.AgentVersion, m.deps.Events, m.log)
 		cl.SetRoutes(specs, targets)
 		cl.SetPolicy(policy)
 		cctx, cancel := context.WithCancel(ctx)

@@ -205,7 +205,35 @@ Decisions, assumptions and backlog. Newest first within each section.
   routed through slog (they go to stderr). A zapcore->slog bridge is a backlog
   refinement; the agent's own logs already use slog.
 
+- 2026-11-09 — (Faz 7) `latchd/internal/events` is the unified event hub: every
+  AccessEvent (local or relay) goes through one `eventSink` into a ring (live
+  --follow) + SQLite (query/dashboards). Writes are async-batched; a full queue
+  or a DB error drops and counts, never crashes. Retention: age (days) + size
+  (MB); over size it deletes the oldest ~5%/pass and WAL-checkpoints. Defaults
+  7 days / 500 MB (ROADMAP decision point). Event-store trouble surfaces as a
+  synthetic warning in the ring.
+- 2026-11-09 — (Faz 7) latchd `/metrics` is served on the management API
+  (loopback): requests by source/decision/status, denials by reason, per-route
+  traffic, latency histogram, bytes, connected-relays gauge, reconnects, and
+  per-route upstream health. `deploy/grafana/` has a scrape config + sample
+  dashboard (DoD).
+- 2026-11-09 — (Faz 7) Dashboard aggregations are computed server-side from
+  SQLite: req/s, p50/p95/p99 (sampled, capped at 100k rows), status classes,
+  top routes, currently-blocked (recent denies), top blocked IPs last hour.
+  `/api/dashboard?window=`.
+- 2026-11-09 — (Faz 7) `policy.Explain(routeID, req)` traces client-IP
+  resolution, GeoIP, each IP policy (global then route) with match/result, lists
+  rate-limit rules (not executed, to avoid consuming budget), and the final
+  decision. `latchd explain` / `POST /api/explain`.
+- 2026-11-09 — (Faz 7) Structured logs: slog JSON to a rotated file via
+  lumberjack (`--log-file`, 100MB x5, 14d, gzip); stderr text otherwise.
+- 2026-11-09 — (Faz 7) High-traffic event sampling (ROADMAP decision point) is
+  deferred: size-based retention bounds disk, and the async queue drops under
+  burst with a counter. Sampling can be added later. Backlog.
+
 ## Backlog
+
+- High-traffic AccessEvent sampling threshold. Faz 7 deferred.
 
 - Local mode `tls: off` (plain-HTTP routes). Faz 6 deferred.
 - Bridge Caddy's zap logs into slog (zapcore). Faz 6 deferred.

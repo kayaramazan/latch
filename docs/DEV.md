@@ -305,3 +305,61 @@ embeds Caddy with its **internal CA**, serves a local upstream over real HTTPS
 response-header rule, then binds an IP policy and confirms the request is denied
 with a 403 and a local AccessEvent. The `tls: off` (plain-HTTP) mode is deferred
 (see NOTES).
+
+## Phase 7 — observability
+
+Every request, local or relay, lands in one event store and is visible in one
+stream, tagged with its source.
+
+```sh
+latchd events --follow                 # live, all routes
+latchd events --route rt_… -n 100      # recent for one route
+latchd events --follow | grep DENY     # watch blocks
+```
+
+Each line is `time [source] host client-ip method path -> status decision`,
+where `source` is `relay` (tunnel mode) or `local` (embedded Caddy).
+
+### Explain
+
+Ask why a request would be allowed or denied, without sending it:
+
+```sh
+latchd explain --route rt_… --ip 203.0.113.9 --path /admin --header "X-Env: prod"
+#   * client_ip   resolved to 203.0.113.9 (trusted proxies: [])
+#   * ip_policy:route  route policy pol_… matched → deny
+#   => DENY (ip_policy, rule pol_…)
+```
+
+### Dashboard and metrics
+
+```sh
+curl -s http://127.0.0.1:4040/api/dashboard?window=3600
+# { requests, requestsPerSec, denied, p50Ms, p95Ms, p99Ms, statusClasses,
+#   topRoutes, currentlyBlocked, topBlockedIpsLastHour }
+
+curl -s http://127.0.0.1:4040/metrics | grep latchd_
+# latchd_requests_total, latchd_denied_total{reason=…}, latchd_tunnels_connected, …
+```
+
+Scrape both the agent and the relay with the example config and import the
+sample dashboard:
+
+```sh
+deploy/grafana/prometheus.yml        # scrape 127.0.0.1:4040 (agent) + :7070 (relay)
+deploy/grafana/latch-dashboard.json  # import into Grafana
+```
+
+### Retention and logs
+
+Events are kept for `settings.events.retentionDays` (default 7) and capped at
+`settings.events.maxSizeMB` (default 500); the oldest are dropped first and a
+full queue or disk problem is logged, never fatal. Structured JSON logs go to a
+rotated file with `--log-file /var/log/latchd.log`.
+
+### What the observability tests cover
+
+`go test ./latchd/internal/events/` covers append/ring/recent, query filters,
+route-filtered subscriptions, aggregation (counts, status classes, top routes,
+top blocked IPs), size-based retention (40k events trimmed under a 1 MB cap),
+and percentiles. `go test ./policy/ -run TestExplain` covers the explain trace.

@@ -6,6 +6,12 @@ import (
 	"github.com/kayaramazan/latch/proto/model"
 )
 
+// EventSink receives AccessEvents (the durable events.Store, or an EventBuffer
+// in tests).
+type EventSink interface {
+	Append(ev model.AccessEvent)
+}
+
 // DefaultEventBufferSize is how many recent AccessEvents latchd keeps in memory
 // (phase 7 adds durable storage).
 const DefaultEventBufferSize = 2048

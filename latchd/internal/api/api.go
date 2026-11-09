@@ -13,36 +13,42 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/kayaramazan/latch/latchd/internal/events"
 	"github.com/kayaramazan/latch/latchd/internal/store"
 	"github.com/kayaramazan/latch/latchd/internal/tunnel"
+	"github.com/kayaramazan/latch/policy"
 	"github.com/kayaramazan/latch/proto/model"
 )
 
-// StatusProvider reports live tunnel state and events (tunnel.Manager).
+// StatusProvider reports live tunnel state (tunnel.Manager).
 type StatusProvider interface {
 	Status() []tunnel.ClientStatus
-	Events() *tunnel.EventBuffer
 }
 
 // Server is the management HTTP API.
 type Server struct {
 	store   *store.Store
 	tun     StatusProvider
+	events  *events.Store
 	log     *slog.Logger
 	version string
 	mux     *http.ServeMux
 	health  func() map[string]string
+	metrics http.Handler
 }
 
 // SetHealth installs an upstream-health provider (local mode).
 func (s *Server) SetHealth(fn func() map[string]string) { s.health = fn }
 
+// SetMetrics installs the Prometheus /metrics handler.
+func (s *Server) SetMetrics(h http.Handler) { s.metrics = h }
+
 // New builds the API server.
-func New(st *store.Store, tun StatusProvider, version string, log *slog.Logger) *Server {
+func New(st *store.Store, tun StatusProvider, ev *events.Store, version string, log *slog.Logger) *Server {
 	if log == nil {
 		log = slog.Default()
 	}
-	s := &Server{store: st, tun: tun, log: log, version: version, mux: http.NewServeMux()}
+	s := &Server{store: st, tun: tun, events: ev, log: log, version: version, mux: http.NewServeMux()}
 	s.routes()
 	return s
 }
@@ -52,8 +58,11 @@ func (s *Server) Handler() http.Handler { return s.mux }
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/status", s.getStatus)
+	s.mux.HandleFunc("GET /metrics", s.serveMetrics)
 	s.mux.HandleFunc("GET /api/events", s.getEvents)
 	s.mux.HandleFunc("GET /api/events/stream", s.streamEvents)
+	s.mux.HandleFunc("GET /api/dashboard", s.getDashboard)
+	s.mux.HandleFunc("POST /api/explain", s.postExplain)
 	s.mux.HandleFunc("GET /api/routes", s.listRoutes)
 	s.mux.HandleFunc("POST /api/routes", s.createRoute)
 	s.mux.HandleFunc("GET /api/routes/{id}", s.getRoute)
@@ -119,13 +128,26 @@ func requireLoopback(addr string) error {
 // --- handlers ---
 
 func (s *Server) getEvents(w http.ResponseWriter, r *http.Request) {
-	n := 100
-	if v := r.URL.Query().Get("n"); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil {
-			n = parsed
+	q := r.URL.Query()
+	f := events.Filter{RouteID: q.Get("route"), ClientIP: q.Get("ip"),
+		Decision: q.Get("decision"), DenyReason: q.Get("reason"), Text: q.Get("q")}
+	if v := q.Get("status"); v != "" {
+		f.Status, _ = strconv.Atoi(v)
+	}
+	if v := q.Get("n"); v != "" {
+		f.Limit, _ = strconv.Atoi(v)
+	}
+	if v := q.Get("since"); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil {
+			f.Since = time.Now().Add(-time.Duration(secs) * time.Second)
 		}
 	}
-	writeJSON(w, http.StatusOK, s.tun.Events().Recent(n))
+	out, err := s.events.Query(f)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
@@ -137,11 +159,14 @@ func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	ch, cancel := s.tun.Events().Subscribe()
+	route := r.URL.Query().Get("route")
+	ch, cancel := s.events.Subscribe(route)
 	defer cancel()
 	enc := json.NewEncoder(w)
-	// Replay a small tail first.
-	for _, ev := range s.tun.Events().Recent(20) {
+	for _, ev := range s.events.Recent(20) {
+		if route != "" && ev.RouteID != route {
+			continue
+		}
 		_, _ = w.Write([]byte("data: "))
 		_ = enc.Encode(ev)
 		_, _ = w.Write([]byte("\n"))
@@ -161,6 +186,102 @@ func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+func (s *Server) getDashboard(w http.ResponseWriter, r *http.Request) {
+	window := 300
+	if v := r.URL.Query().Get("window"); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
+			window = secs
+		}
+	}
+	d, err := s.events.Aggregate(window)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, d)
+}
+
+type explainInput struct {
+	RouteID  string              `json:"routeId"`
+	ClientIP string              `json:"clientIp"`
+	Method   string              `json:"method"`
+	Path     string              `json:"path"`
+	Headers  map[string][]string `json:"headers"`
+}
+
+func (s *Server) postExplain(w http.ResponseWriter, r *http.Request) {
+	var in explainInput
+	if !decode(w, r, &in) {
+		return
+	}
+	if in.RouteID == "" {
+		writeErr(w, http.StatusBadRequest, "routeId is required")
+		return
+	}
+	snap, _ := s.store.Current()
+	var route *model.Route
+	for i := range snap.Routes {
+		if snap.Routes[i].ID == in.RouteID {
+			route = &snap.Routes[i]
+			break
+		}
+	}
+	if route == nil {
+		writeErr(w, http.StatusNotFound, "route not found")
+		return
+	}
+	engine, err := buildExplainEngine(snap, route)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	remote := in.ClientIP
+	if remote != "" {
+		remote += ":12345"
+	}
+	hdr := http.Header(in.Headers)
+	if hdr == nil {
+		hdr = http.Header{}
+	}
+	req := policy.Request{RemoteAddr: remote, Header: hdr, Method: in.Method, Path: in.Path, Host: ""}
+	writeJSON(w, http.StatusOK, engine.Explain(in.RouteID, req))
+}
+
+// buildExplainEngine compiles a policy engine for one route from the snapshot.
+func buildExplainEngine(snap *model.Snapshot, route *model.Route) (*policy.Engine, error) {
+	where := "relay"
+	if route.Exposure == model.ExposureLocal {
+		where = "agent"
+	}
+	neededIP := map[string]bool{route.IPPolicyID: route.IPPolicyID != ""}
+	neededRL := map[string]bool{}
+	for _, id := range route.RateLimitIDs {
+		neededRL[id] = true
+	}
+	var ips []model.IPPolicy
+	for _, p := range snap.IPPolicies {
+		if p.Global || neededIP[p.ID] {
+			ips = append(ips, p)
+		}
+	}
+	var rls []model.RateLimitRule
+	for _, rl := range snap.RateLimits {
+		if rl.Global || neededRL[rl.ID] {
+			rls = append(rls, rl)
+		}
+	}
+	bindings := map[string]policy.Binding{route.ID: {IPPolicyID: route.IPPolicyID, RateLimitIDs: route.RateLimitIDs, Headers: route.Headers}}
+	return policy.New(policy.Options{Where: where, TrustedProxies: snap.Settings.TrustedProxies}, ips, rls, bindings)
+}
+
+func (s *Server) serveMetrics(w http.ResponseWriter, r *http.Request) {
+	if s.metrics == nil {
+		writeErr(w, http.StatusNotFound, "metrics not enabled")
+		return
+	}
+	s.metrics.ServeHTTP(w, r)
 }
 
 func (s *Server) getStatus(w http.ResponseWriter, _ *http.Request) {

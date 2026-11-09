@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kayaramazan/latch/latchd/internal/events"
 	"github.com/kayaramazan/latch/latchd/internal/store"
 	"github.com/kayaramazan/latch/latchd/internal/tunnel"
 	"github.com/kayaramazan/latch/proto/model"
@@ -22,12 +23,6 @@ func (fakeStatus) Status() []tunnel.ClientStatus {
 	return []tunnel.ClientStatus{{RelayID: "rly_x", State: tunnel.StateConnected}}
 }
 
-func (fakeStatus) Events() *tunnel.EventBuffer {
-	b := tunnel.NewEventBuffer(16)
-	b.Append(model.AccessEvent{Hostname: "app.relay.test", Decision: model.DecisionDeny, DenyReason: model.DenyIPPolicy})
-	return b
-}
-
 func newServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "latchd.db"), store.Options{})
@@ -35,7 +30,13 @@ func newServer(t *testing.T) *httptest.Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	s := New(st, fakeStatus{}, "test", nil)
+	ev, err := events.Open(filepath.Join(t.TempDir(), "events.db"), events.Options{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ev.Close() })
+	ev.Append(model.AccessEvent{Hostname: "app.relay.test", Decision: model.DecisionDeny, DenyReason: model.DenyIPPolicy})
+	s := New(st, fakeStatus{}, ev, "test", nil)
 	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(srv.Close)
 	return srv
@@ -139,7 +140,9 @@ func TestRequireLoopback(t *testing.T) {
 func TestListenAndServeRefusesNonLoopback(t *testing.T) {
 	st, _ := store.Open(filepath.Join(t.TempDir(), "latchd.db"), store.Options{})
 	t.Cleanup(func() { _ = st.Close() })
-	s := New(st, fakeStatus{}, "test", nil)
+	ev, _ := events.Open(filepath.Join(t.TempDir(), "events.db"), events.Options{}, nil)
+	t.Cleanup(func() { _ = ev.Close() })
+	s := New(st, fakeStatus{}, ev, "test", nil)
 	if err := s.ListenAndServe(context.Background(), "0.0.0.0:0"); err == nil {
 		t.Error("expected refusal to bind non-loopback")
 	}
