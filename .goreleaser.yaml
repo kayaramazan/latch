@@ -32,13 +32,22 @@ builds:
     goarch: [amd64, arm64]
     ldflags: ["-s -w -X main.Version={{.Version}}"]
 
+# One archive per binary. A combined archive fails goreleaser's
+# "different count of binaries per platform" check, because the three builds
+# cover different OS/arch matrices (latchd ships on Windows, the others do not).
 archives:
-  - id: default
-    ids: [latchd, latch-relay, latch-control]
+  - id: latchd
+    ids: [latchd]
     name_template: "{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
         formats: [zip]
+  - id: latch-relay
+    ids: [latch-relay]
+    name_template: "{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  - id: latch-control
+    ids: [latch-control]
+    name_template: "{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:
   name_template: "checksums.txt"
